@@ -5,6 +5,7 @@ from click.testing import CliRunner
 
 from glyphmatrix.cli.main import fontctl
 
+from .fakes import FakeActivationProvider
 from .fontbuilder import build_test_font
 
 
@@ -244,3 +245,54 @@ def test_fontctl_duplicates_json_output(tmp_path):
     payload = json.loads(result.output)
     assert len(payload) == 1
     assert len(payload[0]["files"]) == 2
+
+
+def test_fontctl_activate_plain_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "activate", "Arial"])
+
+    assert result.exit_code == 0, result.output
+    assert "activated 2 file(s) for Arial" in result.output
+
+
+def test_fontctl_activate_json_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "activate", "--json", "Arial"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert len(payload["processed"]) == 2
+    assert payload["errors"] == []
+
+
+def test_fontctl_activate_unknown_family_errors(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "activate", "Nonexistent"])
+
+    assert result.exit_code != 0
+    assert "no such family" in result.output
+
+
+def test_fontctl_deactivate_plain_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "activate", "Arial"])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "deactivate", "Arial"])
+
+    assert result.exit_code == 0, result.output
+    assert "deactivated 2 file(s) for Arial" in result.output

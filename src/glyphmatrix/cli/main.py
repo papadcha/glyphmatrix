@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 
+from glyphmatrix.core.activation_service import ActivationResult, activate_family, deactivate_family
 from glyphmatrix.core.compare import compare_font_files
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
@@ -230,16 +231,50 @@ def duplicates(ctx: click.Context, as_json: bool) -> None:
             click.echo(f"  {f['family']} {f['style'] or '-'}  {f['path']}")
 
 
-@fontctl.command()
-@click.argument("family")
-def activate(family: str) -> None:
-    raise NotImplementedError
+def _echo_activation_result(result: ActivationResult, as_json: bool, verb: str) -> None:
+    if as_json:
+        click.echo(
+            json.dumps(
+                {
+                    "family": result.family,
+                    "processed": result.processed,
+                    "errors": [{"path": p, "error": e} for p, e in result.errors],
+                }
+            )
+        )
+        return
+
+    click.echo(f"{verb} {len(result.processed)} file(s) for {result.family}")
+    for path in result.processed:
+        click.echo(f"  {path}")
+    for path, error in result.errors:
+        click.echo(f"  ERROR {path}: {error}")
 
 
 @fontctl.command()
 @click.argument("family")
-def deactivate(family: str) -> None:
-    raise NotImplementedError
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def activate(ctx: click.Context, family: str, as_json: bool) -> None:
+    conn = _connect(ctx)
+    if get_family_detail(conn, family) is None:
+        raise click.ClickException(f"no such family: {family}")
+
+    result = activate_family(conn, family)
+    _echo_activation_result(result, as_json, verb="activated")
+
+
+@fontctl.command()
+@click.argument("family")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def deactivate(ctx: click.Context, family: str, as_json: bool) -> None:
+    conn = _connect(ctx)
+    if get_family_detail(conn, family) is None:
+        raise click.ClickException(f"no such family: {family}")
+
+    result = deactivate_family(conn, family)
+    _echo_activation_result(result, as_json, verb="deactivated")
 
 
 if __name__ == "__main__":
