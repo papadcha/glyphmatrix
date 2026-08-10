@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS font_faces (
 CREATE TABLE IF NOT EXISTS font_files (
     id INTEGER PRIMARY KEY,
     font_face_id INTEGER REFERENCES font_faces(id),
-    path TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
     filename TEXT NOT NULL,
     format TEXT,                 -- ttf, otf, woff2, ttc...
     content_hash TEXT NOT NULL,
@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS font_files (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_font_files_content_hash ON font_files(content_hash);
+
 -- Activation as a relation, not a file property — allows different state
 -- per platform/project later without a schema change.
 CREATE TABLE IF NOT EXISTS activations (
@@ -48,7 +50,8 @@ CREATE TABLE IF NOT EXISTS activations (
     state TEXT CHECK(state IN ('available','installed','active','disabled'))
         DEFAULT 'installed',
     activated_at TEXT,
-    deactivated_at TEXT
+    deactivated_at TEXT,
+    UNIQUE(font_file_id, platform)
 );
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -64,7 +67,7 @@ CREATE TABLE IF NOT EXISTS font_tags (
 
 CREATE TABLE IF NOT EXISTS collections (
     id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
     parent_id INTEGER REFERENCES collections(id),  -- hierarchical collections
     is_smart INTEGER DEFAULT 0,        -- no logic in V1 — schema forecast only
     smart_query TEXT                    -- activated in V2

@@ -32,6 +32,18 @@ def test_ingest_directory_adds_new_files(tmp_path):
     assert glyph_rows["n"] == 4  # 2 glyphs x 2 files
 
 
+def test_ingest_directory_stores_foundry(tmp_path):
+    build_test_font(
+        tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular", manufacturer="Monotype"
+    )
+    conn = _conn()
+
+    ingest_directory(conn, tmp_path)
+
+    row = conn.execute("SELECT foundry FROM families WHERE name = 'Arial'").fetchone()
+    assert row["foundry"] == "Monotype"
+
+
 def test_ingest_directory_is_idempotent_when_unchanged(tmp_path):
     build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
     conn = _conn()

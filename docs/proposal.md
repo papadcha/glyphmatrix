@@ -241,7 +241,7 @@ CREATE TABLE font_faces (
 CREATE TABLE font_files (
     id INTEGER PRIMARY KEY,
     font_face_id INTEGER REFERENCES font_faces(id),
-    path TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
     filename TEXT NOT NULL,
     format TEXT,                 -- ttf, otf, woff2, ttc...
     content_hash TEXT NOT NULL,
@@ -255,6 +255,8 @@ CREATE TABLE font_files (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX idx_font_files_content_hash ON font_files(content_hash);
+
 -- Activation ως σχέση, όχι ιδιότητα του αρχείου — επιτρέπει
 -- διαφορετικό state ανά platform/project στο μέλλον χωρίς αλλαγή σχήματος.
 CREATE TABLE activations (
@@ -264,7 +266,8 @@ CREATE TABLE activations (
     state TEXT CHECK(state IN ('available','installed','active','disabled'))
         DEFAULT 'installed',
     activated_at TEXT,
-    deactivated_at TEXT
+    deactivated_at TEXT,
+    UNIQUE(font_file_id, platform)
 );
 
 CREATE TABLE tags (
@@ -280,7 +283,7 @@ CREATE TABLE font_tags (
 
 CREATE TABLE collections (
     id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
     parent_id INTEGER REFERENCES collections(id),  -- ιεραρχικές συλλογές
     is_smart INTEGER DEFAULT 0,        -- χωρίς λογική στο V1 — μόνο πρόβλεψη σχήματος
     smart_query TEXT                    -- ενεργοποιείται στο V2
@@ -432,6 +435,13 @@ Manager, αλλά ο Font Manager δεν χρειάζεται ποτέ το AiMu
 3. **Κλειδώθηκε: standalone.** Ξεχωριστό εργαλείο/repo, όχι module μέσα στο
    AiMusix — επιβεβαιώθηκε ρητά. Integration μόνο μέσω API/CLI αργότερα, βλ.
    ενότητα "Standalone, όχι tight-coupled με AiMusix".
-4. Review πάνω στο schema v0.1: λείπει κάτι, ή κάτι είναι υπερβολικό;
+4. **Κλειδώθηκε (2026-08-10, μετά από πραγματική χρήση όλων των modules):**
+   βρέθηκαν και διορθώθηκαν 3 πραγματικά κενά — `families.foundry` υπήρχε
+   αλλά ποτέ δεν γέμιζε (τώρα εξάγεται από nameID 8 "Manufacturer"), έλειπαν
+   indexes σε `font_files.path`/`content_hash`, και τρία UNIQUE constraints
+   (`font_files.path`, `activations(font_file_id, platform)`,
+   `collections.name`) επιβάλλονταν μόνο σε επίπεδο εφαρμογής χωρίς DB
+   guarantee. Ό,τι άλλο φαινόταν "άδειο" (`axes_json`, `is_smart`/
+   `smart_query`, `metadata_json`) είναι σκόπιμο schema forecast, όχι κενό.
 5. `fontctl` output format — plain text για ανθρώπινη ανάγνωση, JSON για
    scriptability, ή και τα δύο με flag (π.χ. `--json`);

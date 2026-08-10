@@ -13,6 +13,7 @@ def build_test_font(
     a_glyph_size: int = 700,
     extra_glyph: bool = False,
     version: str | None = None,
+    manufacturer: str | None = None,
 ) -> Path:
     """Build a minimal valid TTF for parser tests: .notdef + A (square outline
     of a_glyph_size), optionally + B, mapped via cmap."""
@@ -49,6 +50,8 @@ def build_test_font(
     name_strings = {"familyName": family, "styleName": style}
     if version is not None:
         name_strings["version"] = version
+    if manufacturer is not None:
+        name_strings["manufacturer"] = manufacturer
     fb.setupNameTable(name_strings)
     fb.setupOS2(sTypoAscender=800, sTypoDescender=-200, usWinAscent=800, usWinDescent=200)
     fb.setupPost()

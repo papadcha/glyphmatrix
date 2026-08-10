@@ -33,6 +33,7 @@ class ParsedGlyph:
 @dataclass
 class ParsedFont:
     family_name: str
+    foundry: str | None
     style: str | None
     weight: int | None
     width: str | None
@@ -85,6 +86,7 @@ def parse_font_file(path: str | Path) -> ParsedFont:
     with TTFont(path, lazy=True) as font:
         name_table = font["name"]
         family_name = name_table.getBestFamilyName() or path.stem
+        foundry = name_table.getDebugName(8)  # nameID 8: Manufacturer
         style = name_table.getBestSubFamilyName()
         version = name_table.getDebugName(5)
         license_desc = name_table.getDebugName(13)
@@ -105,6 +107,7 @@ def parse_font_file(path: str | Path) -> ParsedFont:
 
     return ParsedFont(
         family_name=family_name,
+        foundry=foundry,
         style=style,
         weight=weight,
         width=width,

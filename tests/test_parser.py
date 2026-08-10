@@ -17,6 +17,22 @@ def test_parse_font_file_extracts_family_and_style(tmp_path):
     assert len(parsed.content_hash) == 64
 
 
+def test_parse_font_file_extracts_foundry(tmp_path):
+    font_path = build_test_font(tmp_path / "test.ttf", manufacturer="Acme Type Foundry")
+
+    parsed = parse_font_file(font_path)
+
+    assert parsed.foundry == "Acme Type Foundry"
+
+
+def test_parse_font_file_foundry_defaults_to_none(tmp_path):
+    font_path = build_test_font(tmp_path / "test.ttf")
+
+    parsed = parse_font_file(font_path)
+
+    assert parsed.foundry is None
+
+
 def test_parse_font_file_extracts_glyph_metadata(tmp_path):
     font_path = build_test_font(tmp_path / "test.ttf", extra_glyph=True)
 

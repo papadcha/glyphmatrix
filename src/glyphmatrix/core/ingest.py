@@ -11,11 +11,11 @@ from glyphmatrix.core.parser import ParsedFont, parse_font_file
 from glyphmatrix.core.scanner import scan_directory
 
 
-def find_or_create_family(conn: sqlite3.Connection, name: str) -> int:
+def find_or_create_family(conn: sqlite3.Connection, name: str, foundry: str | None = None) -> int:
     row = conn.execute("SELECT id FROM families WHERE name = ?", (name,)).fetchone()
     if row is not None:
         return row["id"]
-    cur = conn.execute("INSERT INTO families (name) VALUES (?)", (name,))
+    cur = conn.execute("INSERT INTO families (name, foundry) VALUES (?, ?)", (name, foundry))
     return cur.lastrowid
 
 
@@ -119,7 +119,7 @@ def ingest_directory(conn: sqlite3.Connection, root: str | Path, source: str = "
         scanned += 1
         try:
             parsed = parse_font_file(font_path)
-            family_id = find_or_create_family(conn, parsed.family_name)
+            family_id = find_or_create_family(conn, parsed.family_name, parsed.foundry)
             face_id = find_or_create_face(conn, family_id, parsed)
             _, status = ingest_font_file(conn, face_id, parsed, source=source)
             seen_paths.add(str(font_path))
