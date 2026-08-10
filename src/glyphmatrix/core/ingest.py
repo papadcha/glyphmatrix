@@ -41,6 +41,24 @@ def find_or_create_face(conn: sqlite3.Connection, family_id: int, parsed: Parsed
     return cur.lastrowid
 
 
+def _flag_unsupported_format(conn: sqlite3.Connection, font_file_id: int, fmt: str) -> None:
+    existing = conn.execute(
+        "SELECT id FROM validation_issues WHERE font_file_id = ? AND issue_type = 'unsupported_format' "
+        "AND resolved_at IS NULL",
+        (font_file_id,),
+    ).fetchone()
+    if existing is None:
+        conn.execute(
+            "INSERT INTO validation_issues (font_file_id, severity, issue_type, detail) "
+            "VALUES (?, 'info', 'unsupported_format', ?)",
+            (
+                font_file_id,
+                f"'.{fmt}' is tracked (path/hash/duplicates) but not parsed — "
+                "no family/style/glyph metadata available yet",
+            ),
+        )
+
+
 def ingest_font_file(
     conn: sqlite3.Connection, font_face_id: int, parsed: ParsedFont, source: str = "user"
 ) -> tuple[int, str]:
@@ -89,6 +107,9 @@ def ingest_font_file(
         )
         font_file_id = cur.lastrowid
         status = "added"
+
+    if not parsed.metadata_complete:
+        _flag_unsupported_format(conn, font_file_id, parsed.format)
 
     conn.executemany(
         "INSERT INTO font_glyphs (font_file_id, glyph_name, unicode_codepoint, "

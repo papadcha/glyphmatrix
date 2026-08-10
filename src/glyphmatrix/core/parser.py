@@ -47,6 +47,35 @@ class ParsedFont:
     license: str | None
     glyph_count: int
     glyphs: list[ParsedGlyph]
+    metadata_complete: bool = True
+
+
+# SFNT (TrueType/OpenType) is the only family fully parsed today. Other
+# scanned formats (Type 1, legacy bitmap) still get a font_files row —
+# content_hash works the same regardless of format, so duplicate detection
+# and basic visibility work — but no family/style/glyph metadata.
+_SFNT_FORMATS = {"ttf", "otf", "ttc", "woff", "woff2"}
+
+
+def _parse_unsupported(path: Path, content_hash: str) -> ParsedFont:
+    return ParsedFont(
+        family_name=path.stem,
+        foundry=None,
+        style=None,
+        weight=None,
+        width=None,
+        is_variable=False,
+        axes=None,
+        path=path,
+        filename=path.name,
+        format=path.suffix.lower().lstrip("."),
+        content_hash=content_hash,
+        version=None,
+        license=None,
+        glyph_count=0,
+        glyphs=[],
+        metadata_complete=False,
+    )
 
 
 def _hash_file(path: Path) -> str:
@@ -82,6 +111,10 @@ def _parse_glyphs(font: TTFont) -> list[ParsedGlyph]:
 def parse_font_file(path: str | Path) -> ParsedFont:
     path = Path(path)
     content_hash = _hash_file(path)
+    fmt = path.suffix.lower().lstrip(".")
+
+    if fmt not in _SFNT_FORMATS:
+        return _parse_unsupported(path, content_hash)
 
     with TTFont(path, lazy=True) as font:
         name_table = font["name"]
@@ -115,7 +148,7 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         axes=axes,
         path=path,
         filename=path.name,
-        format=path.suffix.lower().lstrip("."),
+        format=fmt,
         content_hash=content_hash,
         version=version,
         license=license_desc,

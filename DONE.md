@@ -18,9 +18,12 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] `fontctl collection {create,add,remove,list,show}` — `core/collections.py`, hierarchical via `parent_id`
 - [x] `fontctl preview [--waterfall]` — `core/renderer.py`, Pillow-based raster export
 
+## Legacy format tracking (2026-08-10)
+- [x] `fontctl scan` now recognizes Type 1 (`.pfb`/`.pfa`) and legacy bitmap (`.bdf`/`.pcf`/`.fon`/`.dfont`) files — previously invisible to scan entirely. They get a `font_files` row (path/hash/format), so they show up in `list`/`info` and — since `content_hash` is format-agnostic — **duplicate detection works on them** (verified: two identical `.pfb` files under different names were correctly grouped). No family/style/glyph metadata yet (`parser.py`'s `_parse_unsupported` fallback — real parsing needs `fontTools.t1Lib` for Type 1, nothing usable for bitmap). Every such file gets an `unsupported_format` (severity `info`) `validation_issue` so `fontctl validate` makes the gap visible rather than silent.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 89/89 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency)
+- [x] 99/99 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

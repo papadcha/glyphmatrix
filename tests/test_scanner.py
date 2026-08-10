@@ -21,3 +21,12 @@ def test_scan_directory_is_case_insensitive_on_extension(tmp_path):
     found = list(scan_directory(tmp_path))
 
     assert len(found) == 1
+
+
+def test_scan_directory_finds_type1_and_bitmap_formats(tmp_path):
+    for name in ("OldFont.pfb", "OldFont.pfa", "Terminal.bdf", "Terminal.pcf", "Legacy.fon"):
+        (tmp_path / name).write_bytes(b"not a real font, just a placeholder for extension matching")
+
+    found = {p.name for p in scan_directory(tmp_path)}
+
+    assert found == {"OldFont.pfb", "OldFont.pfa", "Terminal.bdf", "Terminal.pcf", "Legacy.fon"}

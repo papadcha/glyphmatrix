@@ -15,6 +15,7 @@ def test_parse_font_file_extracts_family_and_style(tmp_path):
     assert parsed.is_variable is False
     assert parsed.glyph_count == 2
     assert len(parsed.content_hash) == 64
+    assert parsed.metadata_complete is True
 
 
 def test_parse_font_file_extracts_foundry(tmp_path):
@@ -62,6 +63,21 @@ def test_outline_hash_differs_when_glyph_shape_changes(tmp_path):
     hash_large = next(g.outline_hash for g in parsed_large.glyphs if g.glyph_name == "A")
 
     assert hash_small != hash_large
+
+
+def test_parse_font_file_falls_back_for_unsupported_format(tmp_path):
+    font_path = tmp_path / "OldFont.pfb"
+    font_path.write_bytes(b"not a real Type 1 font, just placeholder bytes")
+
+    parsed = parse_font_file(font_path)
+
+    assert parsed.family_name == "OldFont"
+    assert parsed.style is None
+    assert parsed.format == "pfb"
+    assert parsed.glyph_count == 0
+    assert parsed.glyphs == []
+    assert parsed.metadata_complete is False
+    assert len(parsed.content_hash) == 64  # still hashed, so duplicates still work
 
 
 def test_outline_hash_matches_when_glyph_shape_identical(tmp_path):

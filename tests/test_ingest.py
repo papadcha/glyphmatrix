@@ -1,4 +1,7 @@
+import shutil
+
 from glyphmatrix.core.database import connect, init_schema
+from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.ingest import ingest_directory
 
 from .fontbuilder import build_test_font
@@ -42,6 +45,40 @@ def test_ingest_directory_stores_foundry(tmp_path):
 
     row = conn.execute("SELECT foundry FROM families WHERE name = 'Arial'").fetchone()
     assert row["foundry"] == "Monotype"
+
+
+def test_ingest_directory_tracks_unsupported_formats_and_flags_them(tmp_path):
+    (tmp_path / "OldFont.pfb").write_bytes(b"placeholder Type 1 bytes")
+    conn = _conn()
+
+    result = ingest_directory(conn, tmp_path)
+
+    assert result.files_scanned == 1
+    assert result.files_added == 1
+    assert result.errors == 0
+
+    family = conn.execute("SELECT name FROM families").fetchone()
+    assert family["name"] == "OldFont"
+
+    issue = conn.execute(
+        "SELECT severity, issue_type, resolved_at FROM validation_issues"
+    ).fetchone()
+    assert issue["issue_type"] == "unsupported_format"
+    assert issue["severity"] == "info"
+    assert issue["resolved_at"] is None
+
+
+def test_ingest_directory_duplicate_detection_works_for_unsupported_formats(tmp_path):
+    original = tmp_path / "OldFont.pfb"
+    original.write_bytes(b"identical placeholder bytes")
+    shutil.copy(original, tmp_path / "OldFont-copy.pfb")
+    conn = _conn()
+
+    ingest_directory(conn, tmp_path)
+
+    groups = find_duplicates(conn)
+    assert len(groups) == 1
+    assert len(groups[0]["files"]) == 2
 
 
 def test_ingest_directory_is_idempotent_when_unchanged(tmp_path):
