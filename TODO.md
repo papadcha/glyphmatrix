@@ -43,5 +43,4 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 
 ## Open decisions still unconfirmed
 - [ ] Schema v0.1 review (open decision #4): "does it miss anything, or is anything overbuilt?" — never explicitly revisited since the initial 3-round freeze, even though `font_glyphs` was added afterward
-- [ ] Standalone vs. AiMusix-integrated module (open decision #3) — went with standalone (separate `glyphmatrix` repo) by just following the proposal's own recommendation; never explicitly confirmed by the user in words
 - [ ] `fontctl` output format: currently every command has a `--json` flag alongside plain text — this was assumed as a reasonable default, never explicitly confirmed by the user (proposal open decision #5)

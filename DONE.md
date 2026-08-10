@@ -21,3 +21,7 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
 - [x] 89/89 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency)
+
+## Confirmed decisions
+- [x] Open decision #1 (platform): macOS-first
+- [x] Open decision #3 (standalone vs. AiMusix module): standalone, confirmed — integration only via API/CLI later, never tight-coupled

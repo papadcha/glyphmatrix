@@ -429,8 +429,9 @@ Manager, αλλά ο Font Manager δεν χρειάζεται ποτέ το AiMu
    `ActivationProvider` υλοποίηση· Windows/Linux μένουν stubs.
 2. Desktop framework για το GUI, όταν φτάσουμε εκεί (Tauri vs Electron) — **όχι
    τώρα**, μετά το V1.5.
-3. Θα ζήσει σαν ξεχωριστό εργαλείο ή ενσωματωμένο module μέσα στο AiMusix
-   οικοσύστημα (ίδιο repo/brand family) — προτείνεται standalone με API bridge.
+3. **Κλειδώθηκε: standalone.** Ξεχωριστό εργαλείο/repo, όχι module μέσα στο
+   AiMusix — επιβεβαιώθηκε ρητά. Integration μόνο μέσω API/CLI αργότερα, βλ.
+   ενότητα "Standalone, όχι tight-coupled με AiMusix".
 4. Review πάνω στο schema v0.1: λείπει κάτι, ή κάτι είναι υπερβολικό;
 5. `fontctl` output format — plain text για ανθρώπινη ανάγνωση, JSON για
    scriptability, ή και τα δύο με flag (π.χ. `--json`);
