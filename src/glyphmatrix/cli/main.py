@@ -10,7 +10,14 @@ import click
 from glyphmatrix.core.compare import compare_font_files
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.ingest import ingest_directory
-from glyphmatrix.core.query import find_font_file, get_family_detail, list_faces, list_versions
+from glyphmatrix.core.query import (
+    find_font_file,
+    get_family_detail,
+    list_faces,
+    list_open_issues,
+    list_versions,
+)
+from glyphmatrix.core.validator import validate_library
 
 # V0 command contract per docs/proposal.md. --json is available on every
 # command; default output is plain text. Bodies are stubs pending Phase 0
@@ -169,8 +176,36 @@ def compare(
 
 @fontctl.command()
 @click.option("--json", "as_json", is_flag=True)
-def validate(as_json: bool) -> None:
-    raise NotImplementedError
+@click.pass_context
+def validate(ctx: click.Context, as_json: bool) -> None:
+    conn = _connect(ctx)
+    summary = validate_library(conn)
+    issues = list_open_issues(conn)
+
+    if as_json:
+        click.echo(
+            json.dumps(
+                {
+                    "checked": summary.checked,
+                    "issues_opened": summary.issues_opened,
+                    "issues_resolved": summary.issues_resolved,
+                    "open_issues": issues,
+                }
+            )
+        )
+        return
+
+    click.echo(
+        f"checked {summary.checked}  new issues {summary.issues_opened}  "
+        f"resolved {summary.issues_resolved}  open issues {len(issues)}"
+    )
+    for issue in issues:
+        click.echo(
+            f"  [{issue['severity']}] {issue['family']} {issue['style'] or '-'}: "
+            f"{issue['issue_type']} — {issue['path']}"
+        )
+        if issue["detail"]:
+            click.echo(f"      {issue['detail']}")
 
 
 @fontctl.command()

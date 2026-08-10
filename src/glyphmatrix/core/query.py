@@ -67,6 +67,25 @@ def get_family_detail(conn: sqlite3.Connection, family_name: str) -> dict | None
     }
 
 
+def list_open_issues(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT validation_issues.severity, validation_issues.issue_type,
+               validation_issues.detail, validation_issues.detected_at,
+               families.name AS family, font_faces.style, font_files.path
+        FROM validation_issues
+        JOIN font_files ON font_files.id = validation_issues.font_file_id
+        JOIN font_faces ON font_faces.id = font_files.font_face_id
+        JOIN families ON families.id = font_faces.family_id
+        WHERE validation_issues.resolved_at IS NULL
+        ORDER BY
+            CASE validation_issues.severity WHEN 'error' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+            families.name COLLATE NOCASE
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def find_font_file(
     conn: sqlite3.Connection, family_name: str, style: str, version: str
 ) -> dict | None:

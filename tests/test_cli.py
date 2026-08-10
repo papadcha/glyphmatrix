@@ -163,3 +163,42 @@ def test_fontctl_compare_unknown_version_errors(tmp_path):
     assert result.exit_code != 0
     assert "9.999" in result.output
     assert "1.000" in result.output  # listed as an available version
+
+
+def test_fontctl_validate_plain_output_clean_library(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "validate"])
+
+    assert result.exit_code == 0, result.output
+    assert "checked 2" in result.output
+    assert "open issues 0" in result.output
+
+
+def test_fontctl_validate_flags_and_reports_missing_file(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    db_path = tmp_path / "library.db"
+    runner = CliRunner()
+    runner.invoke(fontctl, ["--db", str(db_path), "scan", str(tmp_path)])
+    (tmp_path / "Arial-Regular.ttf").unlink()
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "validate"])
+
+    assert result.exit_code == 0, result.output
+    assert "new issues 1" in result.output
+    assert "missing_file" in result.output
+
+
+def test_fontctl_validate_json_output(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    db_path = tmp_path / "library.db"
+    runner = CliRunner()
+    runner.invoke(fontctl, ["--db", str(db_path), "scan", str(tmp_path)])
+    (tmp_path / "Arial-Regular.ttf").write_bytes(b"garbage")
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "validate", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["issues_opened"] == 1
+    assert payload["open_issues"][0]["issue_type"] == "corrupt"
