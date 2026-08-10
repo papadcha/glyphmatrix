@@ -18,6 +18,7 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 - [ ] Language coverage checks
 - [ ] OpenType features
 - [ ] Font pairing suggestions
+- [ ] Finer-grained classification via PANOSE (`OS/2.panose`, 10-byte vector: family type, serif style, weight, proportion, contrast, stroke variation, arm style, letterform, midline, x-height) — auto-tagging currently only uses `sFamilyClass`'s ~10 broad categories. PANOSE could distinguish e.g. Grotesque vs. Humanist vs. Geometric sans, but many fonts leave it unset/default (all-zero), so value is inconsistent across real-world fonts — worth checking against the user's actual library before investing in the mapping.
 
 ## V3 — Ecosystem
 - [ ] Google Fonts integration

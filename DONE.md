@@ -28,9 +28,13 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] `fontctl search <term>` — `query.search_library`, simple `LIKE` matching over family name/style/foundry/tags. Deliberately not a query language (that's V2 "smart collections", still on the roadmap) — just cheap keyword search, per the proposal's own "structured tags, not NLP" framing.
 - [x] `fontctl favorite`/`unfavorite`/`favorites` — implemented as sugar over `collections`, not a new schema column: a reserved collection named "Favorites" auto-created on first use (`collections.get_or_create_favorites_collection`). Verified `fontctl collection show Favorites` and `fontctl favorites` return identical data — confirmed it's the same underlying data, not a parallel system.
 
+## Classification + Backup/Restore (2026-08-10)
+- [x] Automatic sans-serif/serif/script/etc. tagging — extracts `OS/2.sFamilyClass` (the "IBM font class", a standard classification type designers embed in the font) at scan time and auto-applies it as a tag via the existing tags system (e.g. "sans-serif", "oldstyle-serif", "slab-serif", "script"). This is objective metadata already in the file, not AI/ML classification — deliberately distinct from the deprioritized V4 "AI mood tagging" idea. No clean "blackletter/medieval" category exists in this standard; "oldstyle-serif" is the closest objective match. `parser.py`'s `_FAMILY_CLASSES` map covers the ~10 documented top-level classes.
+- [x] `fontctl backup <path>` / `fontctl restore <path> [--yes]` — `core/backup.py`, using SQLite's online backup API (`Connection.backup()`), not a raw file copy — safe against an in-use connection. `restore` prompts for confirmation before overwriting the target DB unless `--yes` is passed. Verified round-trip: backed up a library, restored into a fresh DB, all data intact.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 124/124 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency)
+- [x] 137/137 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

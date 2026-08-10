@@ -3,6 +3,8 @@ import shutil
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.ingest import ingest_directory
+from glyphmatrix.core.query import find_face_id
+from glyphmatrix.core.tags import list_tags_for_face
 
 from .fontbuilder import build_test_font
 
@@ -45,6 +47,28 @@ def test_ingest_directory_stores_foundry(tmp_path):
 
     row = conn.execute("SELECT foundry FROM families WHERE name = 'Arial'").fetchone()
     assert row["foundry"] == "Monotype"
+
+
+def test_ingest_directory_auto_tags_family_class(tmp_path):
+    build_test_font(
+        tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular", family_class=8 * 256 + 1
+    )
+    conn = _conn()
+
+    ingest_directory(conn, tmp_path)
+
+    face_id = find_face_id(conn, "Arial", "Regular")
+    assert "sans-serif" in list_tags_for_face(conn, face_id)
+
+
+def test_ingest_directory_no_family_class_tag_when_unclassified(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+
+    ingest_directory(conn, tmp_path)
+
+    face_id = find_face_id(conn, "Arial", "Regular")
+    assert list_tags_for_face(conn, face_id) == []
 
 
 def test_ingest_directory_tracks_unsupported_formats_and_flags_them(tmp_path):

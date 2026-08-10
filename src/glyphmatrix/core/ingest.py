@@ -9,6 +9,7 @@ from pathlib import Path
 from glyphmatrix.core.models import ScanRun
 from glyphmatrix.core.parser import ParsedFont, parse_font_file
 from glyphmatrix.core.scanner import scan_directory
+from glyphmatrix.core.tags import add_tags
 
 
 def find_or_create_family(conn: sqlite3.Connection, name: str, foundry: str | None = None) -> int:
@@ -142,6 +143,8 @@ def ingest_directory(conn: sqlite3.Connection, root: str | Path, source: str = "
             parsed = parse_font_file(font_path)
             family_id = find_or_create_family(conn, parsed.family_name, parsed.foundry)
             face_id = find_or_create_face(conn, family_id, parsed)
+            if parsed.family_class:
+                add_tags(conn, face_id, [parsed.family_class])
             _, status = ingest_font_file(conn, face_id, parsed, source=source)
             seen_paths.add(str(font_path))
             if status == "added":

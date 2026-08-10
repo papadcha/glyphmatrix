@@ -20,6 +20,24 @@ _WIDTH_CLASSES = {
     9: "ultra-expanded",
 }
 
+# High byte of OS/2.sFamilyClass (the "IBM font class"), per the OpenType
+# spec — a classification type designers embed in the font, not inferred.
+# Missing classes (0, 6, 11, 13) are either "No Classification" or reserved;
+# left unmapped on purpose rather than guessed.
+_FAMILY_CLASSES = {
+    1: "oldstyle-serif",
+    2: "transitional-serif",
+    3: "modern-serif",
+    4: "clarendon-serif",
+    5: "slab-serif",
+    7: "freeform-serif",
+    8: "sans-serif",
+    9: "ornamental",
+    10: "script",
+    12: "symbolic",
+    14: "miscellaneous",
+}
+
 
 @dataclass
 class ParsedGlyph:
@@ -47,6 +65,7 @@ class ParsedFont:
     license: str | None
     glyph_count: int
     glyphs: list[ParsedGlyph]
+    family_class: str | None = None
     metadata_complete: bool = True
 
 
@@ -126,10 +145,13 @@ def parse_font_file(path: str | Path) -> ParsedFont:
 
         weight = None
         width = None
+        family_class = None
         if "OS/2" in font:
             os2 = font["OS/2"]
             weight = getattr(os2, "usWeightClass", None)
             width = _WIDTH_CLASSES.get(getattr(os2, "usWidthClass", None))
+            class_id = getattr(os2, "sFamilyClass", 0) >> 8
+            family_class = _FAMILY_CLASSES.get(class_id)
 
         is_variable = "fvar" in font
         axes = None
@@ -154,4 +176,5 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         license=license_desc,
         glyph_count=len(glyphs),
         glyphs=glyphs,
+        family_class=family_class,
     )

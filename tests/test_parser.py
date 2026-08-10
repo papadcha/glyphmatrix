@@ -34,6 +34,22 @@ def test_parse_font_file_foundry_defaults_to_none(tmp_path):
     assert parsed.foundry is None
 
 
+def test_parse_font_file_extracts_family_class(tmp_path):
+    sans_path = build_test_font(tmp_path / "sans.ttf", family_class=8 * 256 + 1)
+    oldstyle_path = build_test_font(tmp_path / "oldstyle.ttf", family_class=1 * 256)
+
+    assert parse_font_file(sans_path).family_class == "sans-serif"
+    assert parse_font_file(oldstyle_path).family_class == "oldstyle-serif"
+
+
+def test_parse_font_file_family_class_none_when_unset(tmp_path):
+    font_path = build_test_font(tmp_path / "test.ttf")  # sFamilyClass defaults to 0
+
+    parsed = parse_font_file(font_path)
+
+    assert parsed.family_class is None
+
+
 def test_parse_font_file_extracts_glyph_metadata(tmp_path):
     font_path = build_test_font(tmp_path / "test.ttf", extra_glyph=True)
 

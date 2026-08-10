@@ -637,3 +637,55 @@ def test_fontctl_favorites_visible_via_collection_show(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "Arial Regular" in result.output
+
+
+def test_fontctl_backup_creates_file(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    backup_path = tmp_path / "backup.db"
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "backup", str(backup_path)])
+
+    assert result.exit_code == 0, result.output
+    assert backup_path.exists()
+
+
+def test_fontctl_restore_with_yes_flag(tmp_path):
+    runner, db_path_a = _scanned_db(tmp_path)
+    backup_path = tmp_path / "backup.db"
+    runner.invoke(fontctl, ["--db", str(db_path_a), "backup", str(backup_path)])
+
+    other_db_path = tmp_path / "other.db"
+    result = runner.invoke(
+        fontctl, ["--db", str(other_db_path), "restore", "--yes", str(backup_path)]
+    )
+
+    assert result.exit_code == 0, result.output
+    list_result = runner.invoke(fontctl, ["--db", str(other_db_path), "list"])
+    assert "Arial" in list_result.output
+
+
+def test_fontctl_restore_prompts_and_accepts(tmp_path):
+    runner, db_path_a = _scanned_db(tmp_path)
+    backup_path = tmp_path / "backup.db"
+    runner.invoke(fontctl, ["--db", str(db_path_a), "backup", str(backup_path)])
+
+    other_db_path = tmp_path / "other.db"
+    result = runner.invoke(
+        fontctl, ["--db", str(other_db_path), "restore", str(backup_path)], input="y\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "restored" in result.output
+
+
+def test_fontctl_restore_aborts_when_declined(tmp_path):
+    runner, db_path_a = _scanned_db(tmp_path)
+    backup_path = tmp_path / "backup.db"
+    runner.invoke(fontctl, ["--db", str(db_path_a), "backup", str(backup_path)])
+
+    other_db_path = tmp_path / "other.db"
+    result = runner.invoke(
+        fontctl, ["--db", str(other_db_path), "restore", str(backup_path)], input="n\n"
+    )
+
+    assert result.exit_code != 0

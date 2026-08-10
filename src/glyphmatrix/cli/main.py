@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from glyphmatrix.core.activation_service import ActivationResult, activate_family, deactivate_family
+from glyphmatrix.core.backup import backup_database, restore_database
 from glyphmatrix.core.collections import (
     FAVORITES_COLLECTION_NAME,
     add_face_to_collection,
@@ -731,6 +732,30 @@ def package_doc_remove(ctx: click.Context, package_name: str, path: str) -> None
         click.echo(f"removed document from '{package_name}': {path}")
     else:
         click.echo(f"'{package_name}' had no document at {path}")
+
+
+@fontctl.command()
+@click.argument("dest_path", metavar="PATH", type=click.Path())
+@click.pass_context
+def backup(ctx: click.Context, dest_path: str) -> None:
+    conn = _connect(ctx)
+    out = backup_database(conn, dest_path)
+    click.echo(f"backed up to {out}")
+
+
+@fontctl.command()
+@click.argument("source_path", metavar="PATH", type=click.Path(exists=True, dir_okay=False))
+@click.option("--yes", "-y", is_flag=True, help="skip the confirmation prompt")
+@click.pass_context
+def restore(ctx: click.Context, source_path: str, yes: bool) -> None:
+    db_path = ctx.obj["db_path"]
+    if not yes:
+        click.confirm(
+            f"This will overwrite {db_path} with the contents of {source_path}. Continue?",
+            abort=True,
+        )
+    restore_database(source_path, db_path)
+    click.echo(f"restored {db_path} from {source_path}")
 
 
 if __name__ == "__main__":
