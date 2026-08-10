@@ -20,6 +20,17 @@ from glyphmatrix.core.compare import compare_font_files
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.ingest import ingest_directory
+from glyphmatrix.core.packages import (
+    add_document,
+    add_file_to_package,
+    create_package,
+    find_package_id,
+    list_documents,
+    list_package_files,
+    list_packages,
+    remove_document,
+    remove_file_from_package,
+)
 from glyphmatrix.core.query import (
     find_face_id,
     find_first_font_file_for_face,
@@ -208,13 +219,7 @@ def preview(
     as_json: bool,
 ) -> None:
     conn = _connect(ctx)
-    face_id = find_face_id(conn, family, style)
-    if face_id is None:
-        raise click.ClickException(f"no such face: {family} {style}")
-
-    font_file = find_first_font_file_for_face(conn, face_id)
-    if font_file is None:
-        raise click.ClickException(f"{family} {style} has no font files")
+    font_file = _resolve_font_file_or_raise(conn, family, style)
 
     if output_path is None:
         safe_name = f"{family}-{style}".replace(" ", "_")
@@ -514,6 +519,146 @@ def collection_show(ctx: click.Context, name: str, as_json: bool) -> None:
         return
     for f in faces:
         click.echo(f"{f['family']} {f['style'] or '-'}")
+
+
+@fontctl.group()
+def package() -> None:
+    """Track which real-world bundle (e.g. a font pack) a file came from."""
+
+
+@package.command(name="create")
+@click.argument("name")
+@click.option("--vendor", default=None)
+@click.option("--notes", default=None)
+@click.pass_context
+def package_create(ctx: click.Context, name: str, vendor: str | None, notes: str | None) -> None:
+    conn = _connect(ctx)
+    try:
+        create_package(conn, name, vendor, notes)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"created package '{name}'")
+
+
+def _resolve_font_file_or_raise(conn: sqlite3.Connection, family: str, style: str) -> dict:
+    face_id = find_face_id(conn, family, style)
+    if face_id is None:
+        raise click.ClickException(f"no such face: {family} {style}")
+    font_file = find_first_font_file_for_face(conn, face_id)
+    if font_file is None:
+        raise click.ClickException(f"{family} {style} has no font files")
+    return font_file
+
+
+@package.command(name="add")
+@click.argument("package_name", metavar="PACKAGE")
+@click.argument("family")
+@click.argument("style")
+@click.pass_context
+def package_add(ctx: click.Context, package_name: str, family: str, style: str) -> None:
+    conn = _connect(ctx)
+    package_id = find_package_id(conn, package_name)
+    if package_id is None:
+        raise click.ClickException(f"no such package: {package_name}")
+    font_file = _resolve_font_file_or_raise(conn, family, style)
+
+    add_file_to_package(conn, package_id, font_file["id"])
+    click.echo(f"added {family} {style} to '{package_name}'")
+
+
+@package.command(name="remove")
+@click.argument("package_name", metavar="PACKAGE")
+@click.argument("family")
+@click.argument("style")
+@click.pass_context
+def package_remove(ctx: click.Context, package_name: str, family: str, style: str) -> None:
+    conn = _connect(ctx)
+    package_id = find_package_id(conn, package_name)
+    if package_id is None:
+        raise click.ClickException(f"no such package: {package_name}")
+    font_file = _resolve_font_file_or_raise(conn, family, style)
+
+    if remove_file_from_package(conn, package_id, font_file["id"]):
+        click.echo(f"removed {family} {style} from '{package_name}'")
+    else:
+        click.echo(f"{family} {style} was not in '{package_name}'")
+
+
+@package.command(name="list")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def package_list(ctx: click.Context, as_json: bool) -> None:
+    conn = _connect(ctx)
+    packages = list_packages(conn)
+
+    if as_json:
+        click.echo(json.dumps(packages))
+        return
+    if not packages:
+        click.echo("no packages yet")
+        return
+    for p in packages:
+        vendor = f" ({p['vendor']})" if p["vendor"] else ""
+        click.echo(f"{p['name']:<24}{vendor} files={p['file_count']} docs={p['document_count']}")
+
+
+@package.command(name="show")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def package_show(ctx: click.Context, name: str, as_json: bool) -> None:
+    conn = _connect(ctx)
+    package_id = find_package_id(conn, name)
+    if package_id is None:
+        raise click.ClickException(f"no such package: {name}")
+
+    files = list_package_files(conn, package_id)
+    docs = list_documents(conn, package_id)
+
+    if as_json:
+        click.echo(json.dumps({"files": files, "documents": docs}))
+        return
+
+    if not files:
+        click.echo(f"'{name}' has no fonts yet")
+    for f in files:
+        click.echo(f"{f['family']} {f['style'] or '-'}  {f['path']}")
+    for d in docs:
+        suffix = f" — {d['description']}" if d["description"] else ""
+        click.echo(f"doc: {d['path']}{suffix}")
+
+
+@package.command(name="doc-add")
+@click.argument("package_name", metavar="PACKAGE")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--description", default=None)
+@click.pass_context
+def package_doc_add(
+    ctx: click.Context, package_name: str, path: str, description: str | None
+) -> None:
+    conn = _connect(ctx)
+    package_id = find_package_id(conn, package_name)
+    if package_id is None:
+        raise click.ClickException(f"no such package: {package_name}")
+
+    add_document(conn, package_id, path, description)
+    click.echo(f"added document to '{package_name}': {path}")
+
+
+@package.command(name="doc-remove")
+@click.argument("package_name", metavar="PACKAGE")
+@click.argument("path")
+@click.pass_context
+def package_doc_remove(ctx: click.Context, package_name: str, path: str) -> None:
+    conn = _connect(ctx)
+    package_id = find_package_id(conn, package_name)
+    if package_id is None:
+        raise click.ClickException(f"no such package: {package_name}")
+
+    if remove_document(conn, package_id, path):
+        click.echo(f"removed document from '{package_name}': {path}")
+    else:
+        click.echo(f"'{package_name}' had no document at {path}")
 
 
 if __name__ == "__main__":

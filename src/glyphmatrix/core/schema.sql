@@ -79,6 +79,35 @@ CREATE TABLE IF NOT EXISTS collection_faces (
     PRIMARY KEY (collection_id, font_face_id)
 );
 
+-- A real-world distribution bundle (e.g. "Adobe Font Folio 11") a file came
+-- in — provenance, not user curation. Distinct from collections: a package
+-- is a fact about where a file came from, not a preference about how to
+-- group it. Membership is per font_file (not font_face) since packages are
+-- about specific physical files, matching font_files.source's granularity.
+CREATE TABLE IF NOT EXISTS packages (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    vendor TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS package_files (
+    package_id INTEGER REFERENCES packages(id),
+    font_file_id INTEGER REFERENCES font_files(id),
+    PRIMARY KEY (package_id, font_file_id)
+);
+
+-- Documentation that came bundled with the package (PDFs, readmes, license
+-- files) — path only, same non-destructive principle as font_files.path.
+CREATE TABLE IF NOT EXISTS package_documents (
+    id INTEGER PRIMARY KEY,
+    package_id INTEGER REFERENCES packages(id),
+    path TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Per-glyph fingerprint, one row per glyph per font_file. Enables comparing
 -- glyph coverage/outline between versions of the same font_face without
 -- re-parsing the font each time — content_hash on font_files only catches

@@ -21,9 +21,12 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 ## Legacy format tracking (2026-08-10)
 - [x] `fontctl scan` now recognizes Type 1 (`.pfb`/`.pfa`) and legacy bitmap (`.bdf`/`.pcf`/`.fon`/`.dfont`) files — previously invisible to scan entirely. They get a `font_files` row (path/hash/format), so they show up in `list`/`info` and — since `content_hash` is format-agnostic — **duplicate detection works on them** (verified: two identical `.pfb` files under different names were correctly grouped). No family/style/glyph metadata yet (`parser.py`'s `_parse_unsupported` fallback — real parsing needs `fontTools.t1Lib` for Type 1, nothing usable for bitmap). Every such file gets an `unsupported_format` (severity `info`) `validation_issue` so `fontctl validate` makes the gap visible rather than silent.
 
+## Packages & Documentation (2026-08-10)
+- [x] `core/packages.py` + `fontctl package {create,add,remove,list,show,doc-add,doc-remove}` — tracks which real-world distribution bundle (e.g. "Adobe Font Folio 11") a font file came from, with vendor/notes metadata and attached document paths (license PDFs, readmes). New `packages`/`package_files`/`package_documents` tables — distinct concept from `collections` (provenance fact vs. user curation preference), membership at the `font_files` level to match `source`'s granularity. Verified end-to-end with the exact motivating scenario: two fonts tagged as belonging to a package, with vendor + a linked EULA PDF.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 99/99 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency)
+- [x] 110/110 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

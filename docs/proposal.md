@@ -127,6 +127,37 @@ outline_hash      = άλλαξε το σχήμα του glyph ανάμεσα σ�
 fontctl compare <family> <style> <version_a> <version_b>
 ```
 
+## Packages & Documentation (προστέθηκε μετά από feedback χρήστη, 2026-08-10)
+
+Ο χρήστης έχει παλιά πακέτα fonts (π.χ. Adobe Font Folio) — δεν θέλει
+απαραίτητα να κρατήσει τα ίδια τα fonts, αλλά του αρέσει η ιδέα να
+σημειώνεται **από ποιο πακέτο ήρθε** κάθε αρχείο, και κάποια πακέτα έχουν
+δικά τους συνοδευτικά έγγραφα (license PDF, README).
+
+Αυτό είναι εννοιολογικά διαφορετικό από `collections`:
+
+- **Collection** = υποκειμενική οργάνωση του χρήστη (π.χ. "Body Text
+  Fonts") — τίποτα να κάνει με το πώς αποκτήθηκε το font.
+- **Package** = γεγονός προέλευσης — "αυτό το αρχείο ήρθε μέσα σε αυτό το
+  distribution bundle", με δικά του metadata (vendor, σημειώσεις) και
+  προαιρετικά συνοδευτικά έγγραφα.
+
+Νέος πίνακας `packages` (name UNIQUE, vendor, notes) + junction
+`package_files` (σε επίπεδο `font_files`, όχι `font_faces` — ένα πακέτο
+αφορά συγκεκριμένα φυσικά αρχεία, ίδιο επίπεδο granularity με το `source`)
++ `package_documents` (path + description, ίδια αρχή "ποτέ δεν
+αντιγράφουμε/αγγίζουμε" όπως και τα font paths).
+
+```
+fontctl package create <name> [--vendor] [--notes]
+fontctl package add <package> <family> <style>
+fontctl package remove <package> <family> <style>
+fontctl package list
+fontctl package show <package>
+fontctl package doc-add <package> <path> [--description]
+fontctl package doc-remove <package> <path>
+```
+
 ## Η δική μου κρίση πάνω στις προτάσεις
 
 - **Συμφωνώ** με το activation-on-demand ως κεντρικό feature — είναι αυτό που
@@ -295,6 +326,34 @@ CREATE TABLE collection_faces (
     PRIMARY KEY (collection_id, font_face_id)
 );
 
+-- Πραγματικό distribution bundle (π.χ. "Adobe Font Folio 11") — προέλευση,
+-- όχι υποκειμενική οργάνωση. Membership σε επίπεδο font_file (όχι
+-- font_face), ίδιο granularity με το font_files.source. Βλ. ενότητα
+-- "Packages & Documentation".
+CREATE TABLE packages (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    vendor TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE package_files (
+    package_id INTEGER REFERENCES packages(id),
+    font_file_id INTEGER REFERENCES font_files(id),
+    PRIMARY KEY (package_id, font_file_id)
+);
+
+-- Έγγραφα που ήρθαν μαζί με το πακέτο (PDF license, readme) — μόνο path,
+-- ίδια αρχή μη-καταστροφικότητας με το font_files.path.
+CREATE TABLE package_documents (
+    id INTEGER PRIMARY KEY,
+    package_id INTEGER REFERENCES packages(id),
+    path TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Per-glyph fingerprint, μία γραμμή ανά glyph ανά font_file. Επιτρέπει σύγκριση
 -- glyph coverage/outline ανάμεσα σε εκδόσεις του ίδιου font_face χωρίς re-parse
 -- κάθε φορά — βλ. ενότητα "Version & Glyph Comparison".
@@ -339,11 +398,12 @@ Conceptual σχήμα:
 ```
 families → font_faces → font_files
                               │
-                ┌─────────────┼─────────────┬──────────────┐
-                ▼             ▼             ▼              ▼
-          activations   validation_issues  metadata_json  font_glyphs
-                                                            (compare εκδόσεις
-                                                             εντός font_face)
+                ┌─────────────┼─────────────┬──────────────┬─────────────┐
+                ▼             ▼             ▼              ▼             ▼
+          activations   validation_issues  metadata_json  font_glyphs  package_files
+                                                            (compare εκδόσεις  │
+                                                             εντός font_face)  ▼
+                                                                            packages ── package_documents
 
 font_tags ── tags          collection_faces ── collections
 scan_runs (ανεξάρτητο, καταγράφει κάθε scan)

@@ -454,3 +454,111 @@ def test_fontctl_preview_unknown_face_errors(tmp_path):
 
     assert result.exit_code != 0
     assert "no such face" in result.output
+
+
+def test_fontctl_package_create_add_show(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    create_result = runner.invoke(
+        fontctl,
+        ["--db", str(db_path), "package", "create", "Adobe Font Folio 11", "--vendor", "Adobe"],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+    add_result = runner.invoke(
+        fontctl,
+        ["--db", str(db_path), "package", "add", "Adobe Font Folio 11", "Arial", "Regular"],
+    )
+    assert add_result.exit_code == 0, add_result.output
+    assert "added Arial Regular to 'Adobe Font Folio 11'" in add_result.output
+
+    show_result = runner.invoke(
+        fontctl, ["--db", str(db_path), "package", "show", "Adobe Font Folio 11"]
+    )
+    assert show_result.exit_code == 0, show_result.output
+    assert "Arial Regular" in show_result.output
+
+
+def test_fontctl_package_create_duplicate_errors(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "package", "create", "Adobe Font Folio 11"])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "package", "create", "Adobe Font Folio 11"])
+
+    assert result.exit_code != 0
+    assert "already exists" in result.output
+
+
+def test_fontctl_package_list(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(
+        fontctl,
+        ["--db", str(db_path), "package", "create", "Adobe Font Folio 11", "--vendor", "Adobe"],
+    )
+    runner.invoke(
+        fontctl, ["--db", str(db_path), "package", "add", "Adobe Font Folio 11", "Arial", "Regular"]
+    )
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "package", "list", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload == [
+        {"name": "Adobe Font Folio 11", "vendor": "Adobe", "file_count": 1, "document_count": 0}
+    ]
+
+
+def test_fontctl_package_remove(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "package", "create", "Adobe Font Folio 11"])
+    runner.invoke(
+        fontctl, ["--db", str(db_path), "package", "add", "Adobe Font Folio 11", "Arial", "Regular"]
+    )
+
+    result = runner.invoke(
+        fontctl,
+        ["--db", str(db_path), "package", "remove", "Adobe Font Folio 11", "Arial", "Regular"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "removed Arial Regular from 'Adobe Font Folio 11'" in result.output
+
+
+def test_fontctl_package_doc_add_list_remove(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "package", "create", "Adobe Font Folio 11"])
+    doc_path = tmp_path / "readme.pdf"
+    doc_path.write_text("fake pdf content")
+
+    add_result = runner.invoke(
+        fontctl,
+        [
+            "--db", str(db_path), "package", "doc-add", "Adobe Font Folio 11", str(doc_path),
+            "--description", "Install guide",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    show_result = runner.invoke(
+        fontctl, ["--db", str(db_path), "package", "show", "Adobe Font Folio 11"]
+    )
+    assert "Install guide" in show_result.output
+    assert str(doc_path) in show_result.output
+
+    remove_result = runner.invoke(
+        fontctl,
+        ["--db", str(db_path), "package", "doc-remove", "Adobe Font Folio 11", str(doc_path)],
+    )
+    assert remove_result.exit_code == 0, remove_result.output
+    assert "removed document" in remove_result.output
+
+
+def test_fontctl_package_add_unknown_package_errors(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "package", "add", "Nonexistent", "Arial", "Regular"]
+    )
+
+    assert result.exit_code != 0
+    assert "no such package" in result.output
