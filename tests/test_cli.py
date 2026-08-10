@@ -1,4 +1,5 @@
 import json
+import shutil
 
 from click.testing import CliRunner
 
@@ -202,3 +203,44 @@ def test_fontctl_validate_json_output(tmp_path):
     payload = json.loads(result.output)
     assert payload["issues_opened"] == 1
     assert payload["open_issues"][0]["issue_type"] == "corrupt"
+
+
+def test_fontctl_duplicates_plain_output(tmp_path):
+    original = tmp_path / "Arial-Regular.ttf"
+    build_test_font(original, family="Arial", style="Regular")
+    shutil.copy(original, tmp_path / "Arial-Regular-copy.ttf")
+    db_path = tmp_path / "library.db"
+    runner = CliRunner()
+    runner.invoke(fontctl, ["--db", str(db_path), "scan", str(tmp_path)])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "duplicates"])
+
+    assert result.exit_code == 0, result.output
+    assert "2 copies" in result.output
+    assert "Arial-Regular.ttf" in result.output
+    assert "Arial-Regular-copy.ttf" in result.output
+
+
+def test_fontctl_duplicates_none_found(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)  # Arial Regular + Bold, no dupes
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "duplicates"])
+
+    assert result.exit_code == 0, result.output
+    assert "no duplicate files found" in result.output
+
+
+def test_fontctl_duplicates_json_output(tmp_path):
+    original = tmp_path / "Arial-Regular.ttf"
+    build_test_font(original, family="Arial", style="Regular")
+    shutil.copy(original, tmp_path / "Arial-Regular-copy.ttf")
+    db_path = tmp_path / "library.db"
+    runner = CliRunner()
+    runner.invoke(fontctl, ["--db", str(db_path), "scan", str(tmp_path)])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "duplicates", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert len(payload) == 1
+    assert len(payload[0]["files"]) == 2

@@ -9,6 +9,7 @@ import click
 
 from glyphmatrix.core.compare import compare_font_files
 from glyphmatrix.core.database import connect, init_schema
+from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.query import (
     find_font_file,
@@ -210,8 +211,23 @@ def validate(ctx: click.Context, as_json: bool) -> None:
 
 @fontctl.command()
 @click.option("--json", "as_json", is_flag=True)
-def duplicates(as_json: bool) -> None:
-    raise NotImplementedError
+@click.pass_context
+def duplicates(ctx: click.Context, as_json: bool) -> None:
+    conn = _connect(ctx)
+    groups = find_duplicates(conn)
+
+    if as_json:
+        click.echo(json.dumps(groups))
+        return
+
+    if not groups:
+        click.echo("no duplicate files found")
+        return
+
+    for group in groups:
+        click.echo(f"{len(group['files'])} copies (hash {group['content_hash'][:12]}):")
+        for f in group["files"]:
+            click.echo(f"  {f['family']} {f['style'] or '-'}  {f['path']}")
 
 
 @fontctl.command()
