@@ -78,6 +78,7 @@ smart collections) χωρίς cloud/λογαριασμό — ακριβώς η �
 | **Scan & parse** (fontTools) | Χωρίς σωστό parsing metadata, τίποτα άλλο δεν χτίζεται πάνω. |
 | **On-demand activation/deactivation** | Είναι ο λόγος ύπαρξης ενός font manager — διαφορετικά είναι απλώς file browser. |
 | **Duplicate & corruption detection** | Ίδιο μοτίβο με το `validation` του AiMusix — offline, χωρίς εξωτερικές εξαρτήσεις. |
+| **Version & Glyph Comparison** | Πραγματική ανάγκη χρήστη: ίδια family/style, διαφορετικό `version` (π.χ. Arial v1 vs v4) μπορεί να έχει διαφορετικό glyph coverage *και* διαφορετικό outline στο ίδιο glyph name. Ξεχωριστό feature από το duplicate detection — βλ. ενότητα παρακάτω. |
 | **Preview (waterfall + custom text)** | Το πρώτο πράγμα που θα δοκιμάσει κάθε χρήστης. |
 | **Tags + Collections (χωρίς "smart" ακόμα)** | Οργάνωση πριν την αναζήτηση — η αναζήτηση δεν έχει νόημα σε άδεια βιβλιοθήκη. |
 | **Τοπική SQLite βάση** | Ίδιο σχήμα σκέψης με AiMusix: `fonts`, `families`, `activations`, `validation_issues`. |
@@ -85,6 +86,46 @@ smart collections) χωρίς cloud/λογαριασμό — ακριβώς η �
 Όλα τα υπόλοιπα (glyph inspector, license tracking, Google Fonts, AI tagging,
 font pairing, visual matcher) πάνε **μετά** — είναι πραγματικά καλές ιδέες, αλλά
 αν μπουν στο v1 θα καθυστερήσουν κάτι που παίζει.
+
+## Version & Glyph Comparison (προστέθηκε μετά από feedback χρήστη)
+
+Ο βασικός λόγος ύπαρξης του εργαλείου για τον χρήστη δεν είναι μόνο "βρες
+duplicates", είναι **σύγκριση εκδόσεων της ίδιας family/style**: π.χ. Arial
+version 1 έχει διαφορετικό outline στο glyph "δ" απ' ό,τι η version 4, η οποία
+επιπλέον έχει περισσότερα glyphs συνολικά.
+
+Αυτό είναι εννοιολογικά διαφορετικό από το duplicate detection:
+
+- **Duplicate detection** (`content_hash` στο `font_files`) πιάνει μόνο
+  *byte-identical* αρχεία — χρήσιμο για "έχω δύο αντίγραφα του ίδιου ακριβώς
+  αρχείου σε διαφορετικούς φακέλους".
+- **Version comparison** χρειάζεται σύγκριση σε επίπεδο glyph ανάμεσα σε δύο
+  `font_files` που ανήκουν στο **ίδιο** `font_face` (ίδια family+style) αλλά
+  διαφορετικό `version` — ποια glyphs υπάρχουν μόνο στη μία έκδοση, ποια
+  υπάρχουν και στις δύο αλλά άλλαξε το outline τους.
+
+Για να είναι αυτό φθηνό να υπολογιστεί (χωρίς re-parse του font κάθε φορά),
+το scan αποθηκεύει ένα **per-glyph fingerprint** ανά `font_file` (νέος πίνακας
+`font_glyphs` — βλ. schema): glyph name, unicode codepoint, contour count,
+advance width, και ένα `outline_hash` (hash πάνω στα σημεία του contour, όχι
+απλά rendered pixels — πιάνει αλλαγές στο σχήμα ακόμα κι αν είναι οπτικά
+μικρές).
+
+Η ίδια η σύγκριση είναι τότε ένα απλό set-diff πάνω στο `font_glyphs`:
+
+```
+μόνο στην A       = glyphs(A) − glyphs(B)
+μόνο στην B       = glyphs(B) − glyphs(A)
+ίδιο glyph_name,
+διαφορετικό
+outline_hash      = άλλαξε το σχήμα του glyph ανάμεσα στις εκδόσεις
+```
+
+Προτεινόμενο νέο command (V1, όχι μέσα στα "παγωμένα" 7 του V0 engine):
+
+```
+fontctl compare <family> <style> <version_a> <version_b>
+```
 
 ## Η δική μου κρίση πάνω στις προτάσεις
 
@@ -147,7 +188,9 @@ fontctl activate / deactivate
 
 **V1 — Font Library**
 SQLite, families, styles, tags, collections, search, preview, favorites,
-validation status. Εδώ γίνεται πραγματικά χρησιμοποιήσιμη βιβλιοθήκη.
+validation status, **`fontctl compare`** (version & glyph comparison — βλ.
+ενότητα "Version & Glyph Comparison" παραπάνω). Εδώ γίνεται πραγματικά
+χρησιμοποιήσιμη βιβλιοθήκη.
 
 **V1.5 — Activation Manager**
 Activation sets, temporary activation, startup state, restore previous state,
@@ -249,6 +292,23 @@ CREATE TABLE collection_faces (
     PRIMARY KEY (collection_id, font_face_id)
 );
 
+-- Per-glyph fingerprint, μία γραμμή ανά glyph ανά font_file. Επιτρέπει σύγκριση
+-- glyph coverage/outline ανάμεσα σε εκδόσεις του ίδιου font_face χωρίς re-parse
+-- κάθε φορά — βλ. ενότητα "Version & Glyph Comparison".
+CREATE TABLE font_glyphs (
+    id INTEGER PRIMARY KEY,
+    font_file_id INTEGER REFERENCES font_files(id),
+    glyph_name TEXT NOT NULL,
+    unicode_codepoint INTEGER,
+    contour_count INTEGER,
+    advance_width INTEGER,
+    outline_hash TEXT NOT NULL,   -- hash πάνω στα σημεία του contour, όχι rendered pixels
+    UNIQUE(font_file_id, glyph_name)
+);
+
+CREATE INDEX idx_font_glyphs_file ON font_glyphs(font_file_id);
+CREATE INDEX idx_font_glyphs_name ON font_glyphs(glyph_name);
+
 CREATE TABLE validation_issues (
     id INTEGER PRIMARY KEY,
     font_file_id INTEGER REFERENCES font_files(id),
@@ -276,9 +336,11 @@ Conceptual σχήμα:
 ```
 families → font_faces → font_files
                               │
-                ┌─────────────┼─────────────┐
-                ▼             ▼             ▼
-          activations   validation_issues  metadata_json
+                ┌─────────────┼─────────────┬──────────────┐
+                ▼             ▼             ▼              ▼
+          activations   validation_issues  metadata_json  font_glyphs
+                                                            (compare εκδόσεις
+                                                             εντός font_face)
 
 font_tags ── tags          collection_faces ── collections
 scan_runs (ανεξάρτητο, καταγράφει κάθε scan)
@@ -357,9 +419,10 @@ Manager, αλλά ο Font Manager δεν χρειάζεται ποτέ το AiMu
 
 ## Ανοιχτές αποφάσεις
 
-1. **Πλατφόρμα εκκίνησης** — προτάθηκε Windows-first (το πιο δύσκολο κομμάτι,
-   real activation/deactivation, να αποδειχθεί πρώτο) — **χρειάζεται δική σου
-   επιβεβαίωση**, δεν το θεωρώ κλειδωμένο ακόμα.
+1. **Πλατφόρμα εκκίνησης** — **κλειδώθηκε: macOS-first**. Σε προηγούμενα
+   feedback rounds (DeepSeek/ChatGPT/Gemini) η πρόταση ήταν πάντα macOS ή
+   Linux· επιβεβαιώθηκε macOS. `platforms/macos.py` είναι η πρώτη πραγματική
+   `ActivationProvider` υλοποίηση· Windows/Linux μένουν stubs.
 2. Desktop framework για το GUI, όταν φτάσουμε εκεί (Tauri vs Electron) — **όχι
    τώρα**, μετά το V1.5.
 3. Θα ζήσει σαν ξεχωριστό εργαλείο ή ενσωματωμένο module μέσα στο AiMusix

@@ -11,6 +11,7 @@ EXPECTED_TABLES = {
     "font_tags",
     "collections",
     "collection_faces",
+    "font_glyphs",
     "validation_issues",
     "scan_runs",
 }

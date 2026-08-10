@@ -76,6 +76,24 @@ CREATE TABLE IF NOT EXISTS collection_faces (
     PRIMARY KEY (collection_id, font_face_id)
 );
 
+-- Per-glyph fingerprint, one row per glyph per font_file. Enables comparing
+-- glyph coverage/outline between versions of the same font_face without
+-- re-parsing the font each time — content_hash on font_files only catches
+-- byte-identical duplicates, not "same face, different version".
+CREATE TABLE IF NOT EXISTS font_glyphs (
+    id INTEGER PRIMARY KEY,
+    font_file_id INTEGER REFERENCES font_files(id),
+    glyph_name TEXT NOT NULL,
+    unicode_codepoint INTEGER,
+    contour_count INTEGER,
+    advance_width INTEGER,
+    outline_hash TEXT NOT NULL,   -- hash over contour points, not rendered pixels
+    UNIQUE(font_file_id, glyph_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_font_glyphs_file ON font_glyphs(font_file_id);
+CREATE INDEX IF NOT EXISTS idx_font_glyphs_name ON font_glyphs(glyph_name);
+
 CREATE TABLE IF NOT EXISTS validation_issues (
     id INTEGER PRIMARY KEY,
     font_file_id INTEGER REFERENCES font_files(id),

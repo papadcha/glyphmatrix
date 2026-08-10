@@ -4,7 +4,7 @@ from glyphmatrix.core.activation import ActivationProvider
 
 
 class LinuxActivationProvider(ActivationProvider):
-    """Not implemented — Windows-first per docs/proposal.md open decision #1."""
+    """Not implemented — macOS-first per docs/proposal.md open decision #1."""
 
     def activate(self, font_file_path: str) -> None:
         raise NotImplementedError

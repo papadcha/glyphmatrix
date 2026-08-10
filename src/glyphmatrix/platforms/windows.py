@@ -4,8 +4,7 @@ from glyphmatrix.core.activation import ActivationProvider
 
 
 class WindowsActivationProvider(ActivationProvider):
-    """Windows font activation via the AddFontResource/RemoveFontResource
-    GDI APIs (or the user font folder for per-user installs)."""
+    """Not implemented — macOS-first per docs/proposal.md open decision #1."""
 
     def activate(self, font_file_path: str) -> None:
         raise NotImplementedError

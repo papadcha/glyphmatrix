@@ -51,6 +51,17 @@ class Activation:
 
 
 @dataclass
+class FontGlyph:
+    id: int | None
+    font_file_id: int
+    glyph_name: str
+    unicode_codepoint: int | None = None
+    contour_count: int | None = None
+    advance_width: int | None = None
+    outline_hash: str = ""
+
+
+@dataclass
 class ValidationIssue:
     id: int | None
     font_file_id: int
