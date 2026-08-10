@@ -7,6 +7,7 @@ FONT_EXTENSIONS = (".ttf", ".otf", ".ttc", ".woff", ".woff2")
 
 
 def scan_directory(root: str | Path) -> Iterator[Path]:
-    """Yield font file paths under root. Discovery only — no parsing,
-    no DB writes. See core/parser.py for metadata extraction."""
-    raise NotImplementedError
+    root = Path(root)
+    for path in root.rglob("*"):
+        if path.is_file() and path.suffix.lower() in FONT_EXTENSIONS:
+            yield path
