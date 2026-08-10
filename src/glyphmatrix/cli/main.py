@@ -22,12 +22,14 @@ from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.query import (
     find_face_id,
+    find_first_font_file_for_face,
     find_font_file,
     get_family_detail,
     list_faces,
     list_open_issues,
     list_versions,
 )
+from glyphmatrix.core.renderer import DEFAULT_TEXT, render_text_preview, render_waterfall_preview
 from glyphmatrix.core.tags import add_tags, find_faces_by_tag, list_all_tags, list_tags_for_face, remove_tag
 from glyphmatrix.core.validator import validate_library
 
@@ -184,6 +186,50 @@ def compare(
     click.echo(f"  only in {version_b} ({len(diff.only_in_b)}): {_format_glyph_list(diff.only_in_b)}")
     click.echo(f"  changed outline ({len(diff.changed)}): {_format_glyph_list(diff.changed)}")
     click.echo(f"  unchanged: {diff.unchanged_count}")
+
+
+@fontctl.command()
+@click.argument("family")
+@click.argument("style")
+@click.option("--text", default=None, help="Custom text to render (default: a pangram)")
+@click.option("--size", default=72, type=int, help="Font size in points (ignored with --waterfall)")
+@click.option("--waterfall", is_flag=True, help="Render at multiple sizes stacked vertically")
+@click.option("-o", "--output", "output_path", type=click.Path(), default=None)
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def preview(
+    ctx: click.Context,
+    family: str,
+    style: str,
+    text: str | None,
+    size: int,
+    waterfall: bool,
+    output_path: str | None,
+    as_json: bool,
+) -> None:
+    conn = _connect(ctx)
+    face_id = find_face_id(conn, family, style)
+    if face_id is None:
+        raise click.ClickException(f"no such face: {family} {style}")
+
+    font_file = find_first_font_file_for_face(conn, face_id)
+    if font_file is None:
+        raise click.ClickException(f"{family} {style} has no font files")
+
+    if output_path is None:
+        safe_name = f"{family}-{style}".replace(" ", "_")
+        suffix = "-waterfall" if waterfall else ""
+        output_path = f"{safe_name}{suffix}.png"
+
+    if waterfall:
+        out = render_waterfall_preview(font_file["path"], output_path, text=text or DEFAULT_TEXT)
+    else:
+        out = render_text_preview(font_file["path"], text or DEFAULT_TEXT, output_path, font_size=size)
+
+    if as_json:
+        click.echo(json.dumps({"output": str(out)}))
+    else:
+        click.echo(f"wrote {out}")
 
 
 @fontctl.command()

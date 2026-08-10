@@ -100,6 +100,13 @@ def find_face_id(conn: sqlite3.Connection, family_name: str, style: str) -> int 
     return row["id"] if row is not None else None
 
 
+def find_first_font_file_for_face(conn: sqlite3.Connection, font_face_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT id, path FROM font_files WHERE font_face_id = ? ORDER BY id", (font_face_id,)
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
 def find_font_file(
     conn: sqlite3.Connection, family_name: str, style: str, version: str
 ) -> dict | None:

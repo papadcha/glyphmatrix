@@ -405,3 +405,52 @@ def test_fontctl_collection_remove(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "removed Arial Regular from 'Favorites'" in result.output
+
+
+def test_fontctl_preview_writes_png(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    out_path = tmp_path / "out.png"
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "preview", "Arial", "Regular", "-o", str(out_path)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert out_path.exists()
+    assert str(out_path) in result.output
+
+
+def test_fontctl_preview_waterfall(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    out_path = tmp_path / "waterfall.png"
+
+    result = runner.invoke(
+        fontctl,
+        ["--db", str(db_path), "preview", "Arial", "Regular", "--waterfall", "-o", str(out_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert out_path.exists()
+
+
+def test_fontctl_preview_json_output(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    out_path = tmp_path / "out.png"
+
+    result = runner.invoke(
+        fontctl,
+        ["--db", str(db_path), "preview", "--json", "Arial", "Regular", "-o", str(out_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["output"] == str(out_path)
+
+
+def test_fontctl_preview_unknown_face_errors(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "preview", "Nope", "Regular"])
+
+    assert result.exit_code != 0
+    assert "no such face" in result.output
