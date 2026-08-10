@@ -65,3 +65,36 @@ def get_family_detail(conn: sqlite3.Connection, family_name: str) -> dict | None
         "foundry": family_row["foundry"],
         "faces": result_faces,
     }
+
+
+def find_font_file(
+    conn: sqlite3.Connection, family_name: str, style: str, version: str
+) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT font_files.id, font_files.path, font_files.version
+        FROM font_files
+        JOIN font_faces ON font_faces.id = font_files.font_face_id
+        JOIN families ON families.id = font_faces.family_id
+        WHERE families.name = ? COLLATE NOCASE
+          AND font_faces.style = ? COLLATE NOCASE
+          AND font_files.version = ?
+        ORDER BY font_files.id
+        """,
+        (family_name, style, version),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def list_versions(conn: sqlite3.Connection, family_name: str, style: str) -> list[str | None]:
+    rows = conn.execute(
+        """
+        SELECT DISTINCT font_files.version
+        FROM font_files
+        JOIN font_faces ON font_faces.id = font_files.font_face_id
+        JOIN families ON families.id = font_faces.family_id
+        WHERE families.name = ? COLLATE NOCASE AND font_faces.style = ? COLLATE NOCASE
+        """,
+        (family_name, style),
+    ).fetchall()
+    return [row["version"] for row in rows]

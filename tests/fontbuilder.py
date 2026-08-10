@@ -12,6 +12,7 @@ def build_test_font(
     style: str = "Regular",
     a_glyph_size: int = 700,
     extra_glyph: bool = False,
+    version: str | None = None,
 ) -> Path:
     """Build a minimal valid TTF for parser tests: .notdef + A (square outline
     of a_glyph_size), optionally + B, mapped via cmap."""
@@ -45,7 +46,10 @@ def build_test_font(
     fb.setupGlyf(glyphs)
     fb.setupHorizontalMetrics({name: (600, 0) for name in glyph_order})
     fb.setupHorizontalHeader(ascent=800, descent=-200)
-    fb.setupNameTable({"familyName": family, "styleName": style})
+    name_strings = {"familyName": family, "styleName": style}
+    if version is not None:
+        name_strings["version"] = version
+    fb.setupNameTable(name_strings)
     fb.setupOS2(sTypoAscender=800, sTypoDescender=-200, usWinAscent=800, usWinDescent=200)
     fb.setupPost()
 

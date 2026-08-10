@@ -104,3 +104,62 @@ def test_fontctl_info_unknown_family_errors(tmp_path):
 
     assert result.exit_code != 0
     assert "no such family" in result.output
+
+
+def _scanned_db_with_versions(tmp_path):
+    build_test_font(
+        tmp_path / "Arial-Regular-v1.ttf",
+        family="Arial",
+        style="Regular",
+        version="1.000",
+        a_glyph_size=500,
+    )
+    build_test_font(
+        tmp_path / "Arial-Regular-v4.ttf",
+        family="Arial",
+        style="Regular",
+        version="4.000",
+        a_glyph_size=500,
+        extra_glyph=True,
+    )
+    db_path = tmp_path / "library.db"
+    runner = CliRunner()
+    runner.invoke(fontctl, ["--db", str(db_path), "scan", str(tmp_path)])
+    return runner, db_path
+
+
+def test_fontctl_compare_plain_output(tmp_path):
+    runner, db_path = _scanned_db_with_versions(tmp_path)
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "compare", "Arial", "Regular", "1.000", "4.000"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "only in 4.000 (1): B" in result.output
+    assert "unchanged: 2" in result.output
+
+
+def test_fontctl_compare_json_output(tmp_path):
+    runner, db_path = _scanned_db_with_versions(tmp_path)
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "compare", "--json", "Arial", "Regular", "1.000", "4.000"]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["only_in_b"] == ["B"]
+    assert payload["unchanged_count"] == 2
+
+
+def test_fontctl_compare_unknown_version_errors(tmp_path):
+    runner, db_path = _scanned_db_with_versions(tmp_path)
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "compare", "Arial", "Regular", "1.000", "9.999"]
+    )
+
+    assert result.exit_code != 0
+    assert "9.999" in result.output
+    assert "1.000" in result.output  # listed as an available version
