@@ -1,0 +1,26 @@
+[project]
+name = "glyphmatrix"
+version = "0.0.1"
+description = "Local Font Library & Activation Manager"
+requires-python = ">=3.11"
+dependencies = [
+    "fonttools>=4.0",
+    "click>=8.0",
+    "pillow>=10.0",
+]
+
+[project.scripts]
+fontctl = "glyphmatrix.cli.main:fontctl"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"glyphmatrix.core" = ["schema.sql"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
