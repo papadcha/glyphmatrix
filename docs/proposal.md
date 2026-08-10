@@ -443,5 +443,5 @@ Manager, αλλά ο Font Manager δεν χρειάζεται ποτέ το AiMu
    `collections.name`) επιβάλλονταν μόνο σε επίπεδο εφαρμογής χωρίς DB
    guarantee. Ό,τι άλλο φαινόταν "άδειο" (`axes_json`, `is_smart`/
    `smart_query`, `metadata_json`) είναι σκόπιμο schema forecast, όχι κενό.
-5. `fontctl` output format — plain text για ανθρώπινη ανάγνωση, JSON για
-   scriptability, ή και τα δύο με flag (π.χ. `--json`);
+5. **Κλειδώθηκε: και τα δύο.** Plain text default, `--json` flag για
+   scriptability — ήδη έτσι υλοποιημένο σε κάθε command, επιβεβαιώθηκε ρητά.

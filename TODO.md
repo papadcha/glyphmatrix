@@ -41,5 +41,3 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 ## Other gaps found on a full re-read of docs/proposal.md
 - [ ] SVG preview export — tech stack section says preview should "export PNG/SVG"; `core/renderer.py` only does PNG (Pillow raster) so far
 
-## Open decisions still unconfirmed
-- [ ] `fontctl` output format: currently every command has a `--json` flag alongside plain text — this was assumed as a reasonable default, never explicitly confirmed by the user (proposal open decision #5)
