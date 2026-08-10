@@ -86,6 +86,31 @@ def list_open_issues(conn: sqlite3.Connection) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def search_library(conn: sqlite3.Connection, term: str) -> list[dict]:
+    """Simple keyword search over family/style/foundry/tags. Not a query
+    language (that's the V2 smart-collections work) — just LIKE matching,
+    per the proposal's own "cheap search over structured tags, not NLP"
+    framing."""
+    pattern = f"%{term}%"
+    rows = conn.execute(
+        """
+        SELECT DISTINCT families.name AS family, font_faces.style,
+               font_faces.weight, font_faces.width
+        FROM font_faces
+        JOIN families ON families.id = font_faces.family_id
+        LEFT JOIN font_tags ON font_tags.font_face_id = font_faces.id
+        LEFT JOIN tags ON tags.id = font_tags.tag_id
+        WHERE families.name LIKE ?
+           OR font_faces.style LIKE ?
+           OR families.foundry LIKE ?
+           OR tags.name LIKE ?
+        ORDER BY families.name COLLATE NOCASE, font_faces.style
+        """,
+        (pattern, pattern, pattern, pattern),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def find_face_id(conn: sqlite3.Connection, family_name: str, style: str) -> int | None:
     row = conn.execute(
         """

@@ -1,6 +1,7 @@
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.ingest import ingest_directory
-from glyphmatrix.core.query import get_family_detail, list_faces
+from glyphmatrix.core.query import find_face_id, get_family_detail, list_faces, search_library
+from glyphmatrix.core.tags import add_tags
 
 from .fontbuilder import build_test_font
 
@@ -59,3 +60,57 @@ def test_get_family_detail_is_case_insensitive(tmp_path):
 def test_get_family_detail_missing_family_returns_none():
     conn = _conn()
     assert get_family_detail(conn, "Nonexistent") is None
+
+
+def test_search_library_matches_family_name(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    build_test_font(tmp_path / "Verdana-Regular.ttf", family="Verdana", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+
+    results = search_library(conn, "aria")
+
+    assert len(results) == 1
+    assert results[0]["family"] == "Arial"
+
+
+def test_search_library_matches_style(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    build_test_font(tmp_path / "Arial-Bold.ttf", family="Arial", style="Bold")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+
+    results = search_library(conn, "bold")
+
+    assert len(results) == 1
+    assert results[0]["style"] == "Bold"
+
+
+def test_search_library_matches_tags(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    face_id = find_face_id(conn, "Arial", "Regular")
+    add_tags(conn, face_id, ["grotesque"])
+
+    results = search_library(conn, "grotesque")
+
+    assert len(results) == 1
+    assert results[0]["family"] == "Arial"
+
+
+def test_search_library_is_case_insensitive_and_no_duplicates(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    face_id = find_face_id(conn, "Arial", "Regular")
+    add_tags(conn, face_id, ["sans", "grotesque"])  # two tags, both irrelevant to this query
+
+    results = search_library(conn, "ARIAL")
+
+    assert len(results) == 1  # not duplicated despite two tag rows
+
+
+def test_search_library_no_matches():
+    conn = _conn()
+    assert search_library(conn, "nonexistent") == []

@@ -9,9 +9,11 @@ import click
 
 from glyphmatrix.core.activation_service import ActivationResult, activate_family, deactivate_family
 from glyphmatrix.core.collections import (
+    FAVORITES_COLLECTION_NAME,
     add_face_to_collection,
     create_collection,
     find_collection_id,
+    get_or_create_favorites_collection,
     list_collection_faces,
     list_collections,
     remove_face_from_collection,
@@ -39,6 +41,7 @@ from glyphmatrix.core.query import (
     list_faces,
     list_open_issues,
     list_versions,
+    search_library,
 )
 from glyphmatrix.core.renderer import DEFAULT_TEXT, render_text_preview, render_waterfall_preview
 from glyphmatrix.core.tags import add_tags, find_faces_by_tag, list_all_tags, list_tags_for_face, remove_tag
@@ -140,6 +143,25 @@ def info(ctx: click.Context, family: str, as_json: bool) -> None:
                 f"    {f['path']}  {f['format']}  v{f['version'] or '?'}  "
                 f"glyphs={f['glyph_count']}  source={f['source']}  hash={f['content_hash'][:12]}"
             )
+
+
+@fontctl.command()
+@click.argument("term")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def search(ctx: click.Context, term: str, as_json: bool) -> None:
+    conn = _connect(ctx)
+    results = search_library(conn, term)
+
+    if as_json:
+        click.echo(json.dumps(results))
+        return
+    if not results:
+        click.echo(f"no matches for '{term}'")
+        return
+    for r in results:
+        style = r["style"] or "-"
+        click.echo(f"{r['family']:<24} {style}")
 
 
 def _format_glyph_list(names: list[str], limit: int = 10) -> str:
@@ -516,6 +538,56 @@ def collection_show(ctx: click.Context, name: str, as_json: bool) -> None:
         return
     if not faces:
         click.echo(f"'{name}' is empty")
+        return
+    for f in faces:
+        click.echo(f"{f['family']} {f['style'] or '-'}")
+
+
+@fontctl.command(name="favorite")
+@click.argument("family")
+@click.argument("style")
+@click.pass_context
+def favorite_add(ctx: click.Context, family: str, style: str) -> None:
+    conn = _connect(ctx)
+    face_id = find_face_id(conn, family, style)
+    if face_id is None:
+        raise click.ClickException(f"no such face: {family} {style}")
+
+    collection_id = get_or_create_favorites_collection(conn)
+    add_face_to_collection(conn, collection_id, face_id)
+    click.echo(f"favorited {family} {style}")
+
+
+@fontctl.command(name="unfavorite")
+@click.argument("family")
+@click.argument("style")
+@click.pass_context
+def favorite_remove(ctx: click.Context, family: str, style: str) -> None:
+    conn = _connect(ctx)
+    face_id = find_face_id(conn, family, style)
+    if face_id is None:
+        raise click.ClickException(f"no such face: {family} {style}")
+
+    collection_id = find_collection_id(conn, FAVORITES_COLLECTION_NAME)
+    if collection_id is not None and remove_face_from_collection(conn, collection_id, face_id):
+        click.echo(f"unfavorited {family} {style}")
+    else:
+        click.echo(f"{family} {style} was not a favorite")
+
+
+@fontctl.command(name="favorites")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def favorites_list(ctx: click.Context, as_json: bool) -> None:
+    conn = _connect(ctx)
+    collection_id = find_collection_id(conn, FAVORITES_COLLECTION_NAME)
+    faces = list_collection_faces(conn, collection_id) if collection_id is not None else []
+
+    if as_json:
+        click.echo(json.dumps(faces))
+        return
+    if not faces:
+        click.echo("no favorites yet")
         return
     for f in faces:
         click.echo(f"{f['family']} {f['style'] or '-'}")

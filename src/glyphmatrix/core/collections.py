@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import sqlite3
 
+# Favorites is sugar over collections, not a separate concept: a reserved
+# collection name that `fontctl favorite`/`unfavorite`/`favorites` manage
+# automatically. `fontctl collection show Favorites` works on the exact
+# same data.
+FAVORITES_COLLECTION_NAME = "Favorites"
+
 
 def find_collection_id(conn: sqlite3.Connection, name: str) -> int | None:
     row = conn.execute(
@@ -57,6 +63,13 @@ def list_collections(conn: sqlite3.Connection) -> list[dict]:
         """
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_or_create_favorites_collection(conn: sqlite3.Connection) -> int:
+    collection_id = find_collection_id(conn, FAVORITES_COLLECTION_NAME)
+    if collection_id is not None:
+        return collection_id
+    return create_collection(conn, FAVORITES_COLLECTION_NAME)
 
 
 def list_collection_faces(conn: sqlite3.Connection, collection_id: int) -> list[dict]:

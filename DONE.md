@@ -24,9 +24,13 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 ## Packages & Documentation (2026-08-10)
 - [x] `core/packages.py` + `fontctl package {create,add,remove,list,show,doc-add,doc-remove}` — tracks which real-world distribution bundle (e.g. "Adobe Font Folio 11") a font file came from, with vendor/notes metadata and attached document paths (license PDFs, readmes). New `packages`/`package_files`/`package_documents` tables — distinct concept from `collections` (provenance fact vs. user curation preference), membership at the `font_files` level to match `source`'s granularity. Verified end-to-end with the exact motivating scenario: two fonts tagged as belonging to a package, with vendor + a linked EULA PDF.
 
+## Search + Favorites (2026-08-10)
+- [x] `fontctl search <term>` — `query.search_library`, simple `LIKE` matching over family name/style/foundry/tags. Deliberately not a query language (that's V2 "smart collections", still on the roadmap) — just cheap keyword search, per the proposal's own "structured tags, not NLP" framing.
+- [x] `fontctl favorite`/`unfavorite`/`favorites` — implemented as sugar over `collections`, not a new schema column: a reserved collection named "Favorites" auto-created on first use (`collections.get_or_create_favorites_collection`). Verified `fontctl collection show Favorites` and `fontctl favorites` return identical data — confirmed it's the same underlying data, not a parallel system.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 110/110 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency)
+- [x] 124/124 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

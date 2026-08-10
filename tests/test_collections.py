@@ -1,9 +1,11 @@
 import pytest
 
 from glyphmatrix.core.collections import (
+    FAVORITES_COLLECTION_NAME,
     add_face_to_collection,
     create_collection,
     find_collection_id,
+    get_or_create_favorites_collection,
     list_collection_faces,
     list_collections,
     remove_face_from_collection,
@@ -83,3 +85,20 @@ def test_list_collections_reports_face_count(tmp_path):
 
     collections = {c["name"]: c["face_count"] for c in list_collections(conn)}
     assert collections == {"Favorites": 1}
+
+
+def test_get_or_create_favorites_collection_creates_once():
+    conn = _conn()
+
+    first = get_or_create_favorites_collection(conn)
+    second = get_or_create_favorites_collection(conn)
+
+    assert first == second
+    assert find_collection_id(conn, FAVORITES_COLLECTION_NAME) == first
+
+
+def test_get_or_create_favorites_collection_reuses_manually_created_one():
+    conn = _conn()
+    manual_id = create_collection(conn, FAVORITES_COLLECTION_NAME)
+
+    assert get_or_create_favorites_collection(conn) == manual_id

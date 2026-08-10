@@ -562,3 +562,78 @@ def test_fontctl_package_add_unknown_package_errors(tmp_path):
 
     assert result.exit_code != 0
     assert "no such package" in result.output
+
+
+def test_fontctl_search_plain_output(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "search", "aria"])
+
+    assert result.exit_code == 0, result.output
+    assert "Arial" in result.output
+
+
+def test_fontctl_search_no_matches(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "search", "nonexistent"])
+
+    assert result.exit_code == 0, result.output
+    assert "no matches" in result.output
+
+
+def test_fontctl_search_json_output(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "search", "--json", "aria"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert len(payload) == 2  # Arial Regular + Bold
+
+
+def test_fontctl_favorite_add_list_remove(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    add_result = runner.invoke(fontctl, ["--db", str(db_path), "favorite", "Arial", "Regular"])
+    assert add_result.exit_code == 0, add_result.output
+    assert "favorited Arial Regular" in add_result.output
+
+    list_result = runner.invoke(fontctl, ["--db", str(db_path), "favorites"])
+    assert list_result.exit_code == 0, list_result.output
+    assert "Arial Regular" in list_result.output
+
+    remove_result = runner.invoke(fontctl, ["--db", str(db_path), "unfavorite", "Arial", "Regular"])
+    assert remove_result.exit_code == 0, remove_result.output
+    assert "unfavorited Arial Regular" in remove_result.output
+
+    empty_result = runner.invoke(fontctl, ["--db", str(db_path), "favorites"])
+    assert "no favorites yet" in empty_result.output
+
+
+def test_fontctl_favorite_unknown_face_errors(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "favorite", "Nope", "Regular"])
+
+    assert result.exit_code != 0
+    assert "no such face" in result.output
+
+
+def test_fontctl_unfavorite_when_not_favorited(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "unfavorite", "Arial", "Regular"])
+
+    assert result.exit_code == 0, result.output
+    assert "was not a favorite" in result.output
+
+
+def test_fontctl_favorites_visible_via_collection_show(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "favorite", "Arial", "Regular"])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "collection", "show", "Favorites"])
+
+    assert result.exit_code == 0, result.output
+    assert "Arial Regular" in result.output
