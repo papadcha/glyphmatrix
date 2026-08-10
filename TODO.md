@@ -38,6 +38,6 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 - [ ] Framework decision (Tauri vs Electron) — explicitly deferred until V1.5+, not decided
 - [ ] "Font Canvas / Library view" concept noted in docs/proposal.md, not started
 
-## Other gaps found on a full re-read of docs/proposal.md
-- [ ] SVG preview export — tech stack section says preview should "export PNG/SVG"; `core/renderer.py` only does PNG (Pillow raster) so far
+## Deprioritized — not near-term
+- [ ] SVG preview export (vector glyph outlines via `fontTools.pens.SVGPathPen`, alongside the existing PNG raster export) — tech stack section says preview should "export PNG/SVG", but the user judged it out of scope for now on 2026-08-10: revisit much later, not soon
 
