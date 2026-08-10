@@ -296,3 +296,112 @@ def test_fontctl_deactivate_plain_output(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "deactivated 2 file(s) for Arial" in result.output
+
+
+def test_fontctl_tag_add_and_list_for_face(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    add_result = runner.invoke(
+        fontctl, ["--db", str(db_path), "tag", "add", "Arial", "Regular", "sans", "grotesque"]
+    )
+    assert add_result.exit_code == 0, add_result.output
+    assert "sans, grotesque" in add_result.output
+
+    list_result = runner.invoke(fontctl, ["--db", str(db_path), "tag", "list", "Arial", "Regular"])
+    assert list_result.exit_code == 0, list_result.output
+    assert "sans" in list_result.output
+    assert "grotesque" in list_result.output
+
+
+def test_fontctl_tag_add_unknown_face_errors(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "tag", "add", "Nope", "Regular", "sans"])
+
+    assert result.exit_code != 0
+    assert "no such face" in result.output
+
+
+def test_fontctl_tag_remove(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "tag", "add", "Arial", "Regular", "sans"])
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "tag", "remove", "Arial", "Regular", "sans"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "removed tag 'sans'" in result.output
+
+
+def test_fontctl_tag_list_all(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "tag", "add", "Arial", "Regular", "sans"])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "tag", "list", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload == [{"name": "sans", "face_count": 1}]
+
+
+def test_fontctl_tag_find(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "tag", "add", "Arial", "Regular", "sans"])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "tag", "find", "sans"])
+
+    assert result.exit_code == 0, result.output
+    assert "Arial Regular" in result.output
+
+
+def test_fontctl_collection_create_add_show(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    create_result = runner.invoke(fontctl, ["--db", str(db_path), "collection", "create", "Favorites"])
+    assert create_result.exit_code == 0, create_result.output
+
+    add_result = runner.invoke(
+        fontctl, ["--db", str(db_path), "collection", "add", "Favorites", "Arial", "Regular"]
+    )
+    assert add_result.exit_code == 0, add_result.output
+    assert "added Arial Regular to 'Favorites'" in add_result.output
+
+    show_result = runner.invoke(fontctl, ["--db", str(db_path), "collection", "show", "Favorites"])
+    assert show_result.exit_code == 0, show_result.output
+    assert "Arial Regular" in show_result.output
+
+
+def test_fontctl_collection_create_duplicate_errors(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "collection", "create", "Favorites"])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "collection", "create", "Favorites"])
+
+    assert result.exit_code != 0
+    assert "already exists" in result.output
+
+
+def test_fontctl_collection_list(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "collection", "create", "Favorites"])
+    runner.invoke(fontctl, ["--db", str(db_path), "collection", "add", "Favorites", "Arial", "Regular"])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "collection", "list", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload == [{"name": "Favorites", "parent_name": None, "face_count": 1}]
+
+
+def test_fontctl_collection_remove(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "collection", "create", "Favorites"])
+    runner.invoke(fontctl, ["--db", str(db_path), "collection", "add", "Favorites", "Arial", "Regular"])
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "collection", "remove", "Favorites", "Arial", "Regular"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "removed Arial Regular from 'Favorites'" in result.output

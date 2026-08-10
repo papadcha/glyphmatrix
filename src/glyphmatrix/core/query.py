@@ -86,6 +86,20 @@ def list_open_issues(conn: sqlite3.Connection) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def find_face_id(conn: sqlite3.Connection, family_name: str, style: str) -> int | None:
+    row = conn.execute(
+        """
+        SELECT font_faces.id
+        FROM font_faces
+        JOIN families ON families.id = font_faces.family_id
+        WHERE families.name = ? COLLATE NOCASE AND font_faces.style = ? COLLATE NOCASE
+        ORDER BY font_faces.id
+        """,
+        (family_name, style),
+    ).fetchone()
+    return row["id"] if row is not None else None
+
+
 def find_font_file(
     conn: sqlite3.Connection, family_name: str, style: str, version: str
 ) -> dict | None:

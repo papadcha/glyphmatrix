@@ -1,0 +1,85 @@
+import pytest
+
+from glyphmatrix.core.collections import (
+    add_face_to_collection,
+    create_collection,
+    find_collection_id,
+    list_collection_faces,
+    list_collections,
+    remove_face_from_collection,
+)
+from glyphmatrix.core.database import connect, init_schema
+from glyphmatrix.core.ingest import ingest_directory
+from glyphmatrix.core.query import find_face_id
+
+from .fontbuilder import build_test_font
+
+
+def _conn():
+    conn = connect(":memory:")
+    init_schema(conn)
+    return conn
+
+
+def _ingested_face_id(conn, tmp_path, family="Arial", style="Regular"):
+    build_test_font(tmp_path / f"{family}-{style}.ttf", family=family, style=style)
+    ingest_directory(conn, tmp_path)
+    return find_face_id(conn, family, style)
+
+
+def test_create_collection_and_lookup():
+    conn = _conn()
+    collection_id = create_collection(conn, "Work Fonts")
+
+    assert find_collection_id(conn, "work fonts") == collection_id  # case-insensitive
+
+
+def test_create_collection_rejects_duplicate_name():
+    conn = _conn()
+    create_collection(conn, "Work Fonts")
+
+    with pytest.raises(ValueError):
+        create_collection(conn, "work fonts")
+
+
+def test_create_collection_with_missing_parent_raises():
+    conn = _conn()
+
+    with pytest.raises(ValueError):
+        create_collection(conn, "Sub", parent_name="Nonexistent")
+
+
+def test_create_collection_with_parent():
+    conn = _conn()
+    create_collection(conn, "Parent")
+    create_collection(conn, "Child", parent_name="Parent")
+
+    collections = {c["name"]: c["parent_name"] for c in list_collections(conn)}
+    assert collections == {"Parent": None, "Child": "Parent"}
+
+
+def test_add_and_remove_face_from_collection(tmp_path):
+    conn = _conn()
+    face_id = _ingested_face_id(conn, tmp_path)
+    collection_id = create_collection(conn, "Favorites")
+
+    add_face_to_collection(conn, collection_id, face_id)
+    assert list_collection_faces(conn, collection_id) == [{"family": "Arial", "style": "Regular"}]
+
+    # adding twice is a no-op, not an error
+    add_face_to_collection(conn, collection_id, face_id)
+    assert len(list_collection_faces(conn, collection_id)) == 1
+
+    assert remove_face_from_collection(conn, collection_id, face_id) is True
+    assert list_collection_faces(conn, collection_id) == []
+    assert remove_face_from_collection(conn, collection_id, face_id) is False
+
+
+def test_list_collections_reports_face_count(tmp_path):
+    conn = _conn()
+    face_id = _ingested_face_id(conn, tmp_path)
+    collection_id = create_collection(conn, "Favorites")
+    add_face_to_collection(conn, collection_id, face_id)
+
+    collections = {c["name"]: c["face_count"] for c in list_collections(conn)}
+    assert collections == {"Favorites": 1}

@@ -8,17 +8,27 @@ from pathlib import Path
 import click
 
 from glyphmatrix.core.activation_service import ActivationResult, activate_family, deactivate_family
+from glyphmatrix.core.collections import (
+    add_face_to_collection,
+    create_collection,
+    find_collection_id,
+    list_collection_faces,
+    list_collections,
+    remove_face_from_collection,
+)
 from glyphmatrix.core.compare import compare_font_files
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.query import (
+    find_face_id,
     find_font_file,
     get_family_detail,
     list_faces,
     list_open_issues,
     list_versions,
 )
+from glyphmatrix.core.tags import add_tags, find_faces_by_tag, list_all_tags, list_tags_for_face, remove_tag
 from glyphmatrix.core.validator import validate_library
 
 # V0 command contract per docs/proposal.md. --json is available on every
@@ -275,6 +285,189 @@ def deactivate(ctx: click.Context, family: str, as_json: bool) -> None:
 
     result = deactivate_family(conn, family)
     _echo_activation_result(result, as_json, verb="deactivated")
+
+
+@fontctl.group()
+def tag() -> None:
+    """Manage tags on font faces."""
+
+
+@tag.command(name="add")
+@click.argument("family")
+@click.argument("style")
+@click.argument("tag_names", metavar="TAG...", nargs=-1, required=True)
+@click.pass_context
+def tag_add(ctx: click.Context, family: str, style: str, tag_names: tuple[str, ...]) -> None:
+    conn = _connect(ctx)
+    face_id = find_face_id(conn, family, style)
+    if face_id is None:
+        raise click.ClickException(f"no such face: {family} {style}")
+
+    applied = add_tags(conn, face_id, list(tag_names))
+    click.echo(f"tagged {family} {style}: {', '.join(applied) if applied else '(no new tags)'}")
+
+
+@tag.command(name="remove")
+@click.argument("family")
+@click.argument("style")
+@click.argument("tag_name")
+@click.pass_context
+def tag_remove(ctx: click.Context, family: str, style: str, tag_name: str) -> None:
+    conn = _connect(ctx)
+    face_id = find_face_id(conn, family, style)
+    if face_id is None:
+        raise click.ClickException(f"no such face: {family} {style}")
+
+    if remove_tag(conn, face_id, tag_name):
+        click.echo(f"removed tag '{tag_name}' from {family} {style}")
+    else:
+        click.echo(f"{family} {style} was not tagged '{tag_name}'")
+
+
+@tag.command(name="list")
+@click.argument("family", required=False)
+@click.argument("style", required=False)
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def tag_list(ctx: click.Context, family: str | None, style: str | None, as_json: bool) -> None:
+    conn = _connect(ctx)
+
+    if family is not None or style is not None:
+        if family is None or style is None:
+            raise click.ClickException("give both FAMILY and STYLE, or neither to list all tags")
+        face_id = find_face_id(conn, family, style)
+        if face_id is None:
+            raise click.ClickException(f"no such face: {family} {style}")
+        face_tags = list_tags_for_face(conn, face_id)
+        if as_json:
+            click.echo(json.dumps(face_tags))
+        else:
+            click.echo(", ".join(face_tags) if face_tags else "(no tags)")
+        return
+
+    all_tags = list_all_tags(conn)
+    if as_json:
+        click.echo(json.dumps(all_tags))
+        return
+    if not all_tags:
+        click.echo("no tags yet")
+        return
+    for t in all_tags:
+        click.echo(f"{t['name']:<20} {t['face_count']} face(s)")
+
+
+@tag.command(name="find")
+@click.argument("tag_name")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def tag_find(ctx: click.Context, tag_name: str, as_json: bool) -> None:
+    conn = _connect(ctx)
+    faces = find_faces_by_tag(conn, tag_name)
+
+    if as_json:
+        click.echo(json.dumps(faces))
+        return
+    if not faces:
+        click.echo(f"no faces tagged '{tag_name}'")
+        return
+    for f in faces:
+        click.echo(f"{f['family']} {f['style'] or '-'}")
+
+
+@fontctl.group()
+def collection() -> None:
+    """Manage font collections."""
+
+
+@collection.command(name="create")
+@click.argument("name")
+@click.option("--parent", "parent_name", default=None)
+@click.pass_context
+def collection_create(ctx: click.Context, name: str, parent_name: str | None) -> None:
+    conn = _connect(ctx)
+    try:
+        create_collection(conn, name, parent_name)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    suffix = f" under '{parent_name}'" if parent_name else ""
+    click.echo(f"created collection '{name}'{suffix}")
+
+
+@collection.command(name="add")
+@click.argument("collection_name", metavar="COLLECTION")
+@click.argument("family")
+@click.argument("style")
+@click.pass_context
+def collection_add(ctx: click.Context, collection_name: str, family: str, style: str) -> None:
+    conn = _connect(ctx)
+    collection_id = find_collection_id(conn, collection_name)
+    if collection_id is None:
+        raise click.ClickException(f"no such collection: {collection_name}")
+    face_id = find_face_id(conn, family, style)
+    if face_id is None:
+        raise click.ClickException(f"no such face: {family} {style}")
+
+    add_face_to_collection(conn, collection_id, face_id)
+    click.echo(f"added {family} {style} to '{collection_name}'")
+
+
+@collection.command(name="remove")
+@click.argument("collection_name", metavar="COLLECTION")
+@click.argument("family")
+@click.argument("style")
+@click.pass_context
+def collection_remove(ctx: click.Context, collection_name: str, family: str, style: str) -> None:
+    conn = _connect(ctx)
+    collection_id = find_collection_id(conn, collection_name)
+    if collection_id is None:
+        raise click.ClickException(f"no such collection: {collection_name}")
+    face_id = find_face_id(conn, family, style)
+    if face_id is None:
+        raise click.ClickException(f"no such face: {family} {style}")
+
+    if remove_face_from_collection(conn, collection_id, face_id):
+        click.echo(f"removed {family} {style} from '{collection_name}'")
+    else:
+        click.echo(f"{family} {style} was not in '{collection_name}'")
+
+
+@collection.command(name="list")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def collection_list(ctx: click.Context, as_json: bool) -> None:
+    conn = _connect(ctx)
+    collections_ = list_collections(conn)
+
+    if as_json:
+        click.echo(json.dumps(collections_))
+        return
+    if not collections_:
+        click.echo("no collections yet")
+        return
+    for c in collections_:
+        parent = f" (in {c['parent_name']})" if c["parent_name"] else ""
+        click.echo(f"{c['name']:<20} {c['face_count']} face(s){parent}")
+
+
+@collection.command(name="show")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def collection_show(ctx: click.Context, name: str, as_json: bool) -> None:
+    conn = _connect(ctx)
+    collection_id = find_collection_id(conn, name)
+    if collection_id is None:
+        raise click.ClickException(f"no such collection: {name}")
+
+    faces = list_collection_faces(conn, collection_id)
+    if as_json:
+        click.echo(json.dumps(faces))
+        return
+    if not faces:
+        click.echo(f"'{name}' is empty")
+        return
+    for f in faces:
+        click.echo(f"{f['family']} {f['style'] or '-'}")
 
 
 if __name__ == "__main__":
