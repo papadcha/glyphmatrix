@@ -352,17 +352,21 @@ Core **δεν** πρέπει να ξέρει ότι υπάρχει Windows/macOS
 
 ```
 core/
-    scanner/
-    parser/
-    validator/
-    database/
-    models/
+    scanner.py
+    parser.py
+    validator.py
+    database.py
+    models.py
+    ...
 
-platform/
-    windows/activation.py
-    macos/activation.py
-    linux/activation.py
+platforms/                     # plural — "platform" alone shadows the stdlib module
+    windows.py
+    macos.py
+    linux.py
 ```
+
+(Διαφέρει ελαφρώς από το αρχικό σχέδιο παραπάνω — flat modules αντί για nested
+φακέλους ανά OS, ίδια ιδέα.)
 
 Interface: `ActivationProvider` — το core καλεί το interface, όχι συγκεκριμένο
 platform module. Έτσι το πρώτο platform port είναι *extension*, όχι rewrite.
