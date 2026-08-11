@@ -56,9 +56,15 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] `fontctl info` shows the expiry time alongside activation state when set.
 - [x] **Verified on real hardware**: activated a real font with `--for 30m`, confirmed `deactivate-expired` correctly leaves it alone before expiry and deactivates it once the stored expiry is moved into the past.
 
+## Startup State Restore (2026-08-11)
+- [x] `fontctl startup` — re-applies every font the library says should be active, for the current platform. Mainly matters on Windows: `AddFontResourceEx` registration is session-only and doesn't survive a reboot (per `platforms/windows.py`'s own docstring), so right after login the DB says "active" while the OS has already forgotten. macOS/Linux persist their activation symlinks on disk across reboot on their own, so running this there is a harmless no-op re-assert.
+- [x] Deliberately bypasses the normal "skip the OS call if the DB already says active" idempotency check that `activate_family`/`activate_set` use — that check exists to avoid double-registering with Windows' reference-counted API, but it's exactly wrong for this function's whole purpose (reconciling "DB says active" with "OS actually forgot"). Preserves any existing `expires_at` when re-marking a file active, so a temporary activation that survives a reboot still expires on schedule.
+- [x] **Verified on real hardware** with the actual reboot scenario, not just a mock: activated a real font, then called `RemoveFontResourceExW` directly (bypassing the DB entirely, simulating exactly what a reboot does) so the OS no longer had it registered while the DB still said `active`. `EnumFontFamiliesEx` confirmed the font was gone; `fontctl startup` correctly detected and re-registered it, confirmed found again afterward.
+- [x] Deliberately **not** a background daemon or login-item installer — same reasoning as `deactivate-expired`, noted together in TODO.md as needing a documented per-OS scheduling recipe (Task Scheduler/launchd/cron/login script).
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 192/192 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
+- [x] 199/199 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

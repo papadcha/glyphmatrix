@@ -16,6 +16,7 @@ from glyphmatrix.core.activation_service import (
     deactivate_set,
     disable_family,
     enable_family,
+    restore_active_state,
 )
 from glyphmatrix.core.backup import backup_database, restore_database
 from glyphmatrix.core.collections import (
@@ -388,6 +389,21 @@ def deactivate_expired_cmd(ctx: click.Context, as_json: bool) -> None:
     conn = _connect(ctx)
     result = deactivate_expired(conn)
     _echo_activation_result(result, as_json, verb="deactivated")
+
+
+@fontctl.command()
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def startup(ctx: click.Context, as_json: bool) -> None:
+    """Re-apply every font this library says should be active. Meant to
+    run once after login/reboot — mainly matters on Windows, where
+    AddFontResourceEx registration doesn't survive one; macOS/Linux
+    persist their activation symlinks on their own, so this is a harmless
+    no-op there. Wire it into Task Scheduler/launchd/a login script
+    yourself — the tool has no background process to do it automatically."""
+    conn = _connect(ctx)
+    result = restore_active_state(conn)
+    _echo_activation_result(result, as_json, verb="restored")
 
 
 @fontctl.group(name="set")

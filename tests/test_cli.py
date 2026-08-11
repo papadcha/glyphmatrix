@@ -373,6 +373,32 @@ def test_fontctl_deactivate_expired(tmp_path, monkeypatch):
     assert "deactivated 2 file(s) for expired" in result.output
 
 
+def test_fontctl_startup_reapplies_active_fonts(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "activate", "Arial"])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "startup"])
+
+    assert result.exit_code == 0, result.output
+    assert "restored 2 file(s) for restored" in result.output
+
+
+def test_fontctl_startup_json_output_when_nothing_active(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "startup", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["processed"] == []
+
+
 def test_fontctl_disable_then_activate_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()

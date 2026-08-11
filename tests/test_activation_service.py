@@ -11,6 +11,7 @@ from glyphmatrix.core.activation_service import (
     disable_family,
     enable_family,
     parse_duration,
+    restore_active_state,
 )
 from glyphmatrix.core.collections import add_face_to_collection, create_collection
 from glyphmatrix.core.database import connect, init_schema
@@ -395,3 +396,79 @@ def test_deactivate_expired_ignores_permanent_activations(tmp_path):
     assert result.processed == []
     state = conn.execute("SELECT state FROM activations").fetchone()["state"]
     assert state == "active"
+
+
+def test_restore_active_state_reapplies_even_though_db_already_says_active(tmp_path):
+    """This is the whole point of the function: on Windows, a reboot wipes
+    AddFontResourceEx registration but not our DB, so the normal
+    "already active, skip the OS call" idempotency check would wrongly
+    leave the font un-registered after login. restore_active_state must
+    call the provider regardless of what the DB already says."""
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+    activate_family(conn, "Arial", provider=provider)
+    assert len(provider.activated) == 1
+
+    result = restore_active_state(conn, provider=provider)
+
+    assert len(provider.activated) == 2  # called again, unlike activate_family's skip
+    assert len(result.processed) == 1
+
+
+def test_restore_active_state_ignores_non_active_fonts(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    build_test_font(tmp_path / "Verdana-Regular.ttf", family="Verdana", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+    activate_family(conn, "Arial", provider=provider)
+    disable_family(conn, "Verdana", provider=provider)  # never activated, now disabled
+
+    result = restore_active_state(conn, provider=provider)
+
+    assert len(result.processed) == 1
+    assert "Arial" in result.processed[0]
+
+
+def test_restore_active_state_never_activated_is_a_noop(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+
+    result = restore_active_state(conn, provider=provider)
+
+    assert result.processed == []
+    assert provider.activated == []
+
+
+def test_restore_active_state_preserves_expiry(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+    activate_family(conn, "Arial", provider=provider, duration="2h")
+    original_expiry = conn.execute("SELECT expires_at FROM activations").fetchone()["expires_at"]
+
+    restore_active_state(conn, provider=provider)
+
+    restored_expiry = conn.execute("SELECT expires_at FROM activations").fetchone()["expires_at"]
+    assert restored_expiry == original_expiry
+
+
+def test_restore_active_state_collects_per_file_errors(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    path = str(tmp_path / "Arial-Regular.ttf")
+    provider = FakeActivationProvider()
+    activate_family(conn, "Arial", provider=provider)
+
+    failing_provider = FakeActivationProvider(fail_paths=frozenset({path}))
+    result = restore_active_state(conn, provider=failing_provider)
+
+    assert result.processed == []
+    assert len(result.errors) == 1
+    assert result.errors[0][0] == path

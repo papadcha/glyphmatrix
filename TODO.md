@@ -3,9 +3,8 @@
 Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled — pick items up in whatever order makes sense when picking work back up.
 
 ## V1.5 — Activation Manager
-- [ ] Startup state restore
 - [ ] Conflict handling
-- [ ] OS-level scheduling for `fontctl deactivate-expired` (currently the user has to run it manually or wire their own cron/Task Scheduler entry — the tool intentionally has no background daemon, per its CLI-first, no-magic-process design, but a documented setup recipe per OS would help)
+- [ ] OS-level scheduling for `fontctl deactivate-expired` and `fontctl startup` (currently the user has to run them manually or wire their own cron/Task Scheduler/login-item entry — the tool intentionally has no background daemon, per its CLI-first, no-magic-process design, but a documented setup recipe per OS would help)
 - [ ] Real-hardware verification of Linux activation (`platforms/linux.py` was built and unit-tested with mocked `fc-cache`/symlinks on 2026-08-11, same as macOS's original implementation, but never run against an actual Linux machine — do that before fully trusting it, the way macOS activation was confirmed on real hardware)
 
 ## V2 — Intelligence

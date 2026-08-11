@@ -307,6 +307,51 @@ def deactivate_expired(
     return ActivationResult(label="expired", processed=processed, errors=errors)
 
 
+def restore_active_state(
+    conn: sqlite3.Connection, provider: ActivationProvider | None = None
+) -> ActivationResult:
+    """Re-applies every font the DB says should be active for this
+    platform — meant to run once after login/reboot.
+
+    Deliberately bypasses _apply_activation's usual "skip the OS call if
+    the DB already says active" check: that check exists to avoid
+    double-registering with Windows' reference-counted AddFontResourceEx,
+    but it's wrong here. Windows' registration doesn't survive a reboot at
+    all (it's session-only, per WindowsActivationProvider's docstring), so
+    right after login the DB says "active" while the OS has already
+    forgotten — the whole point of this function is to reconcile that gap,
+    so the provider call must always happen. macOS/Linux persist their
+    symlinks across reboot on their own; re-asserting them here is a
+    harmless no-op (MacOSActivationProvider/LinuxActivationProvider treat
+    an already-correct symlink as already-active and return immediately)."""
+    provider = provider or get_provider()
+    platform_name = platform_module.system().lower()
+    now = datetime.now(timezone.utc).isoformat()
+
+    rows = conn.execute(
+        """
+        SELECT font_files.id, font_files.path, activations.expires_at
+        FROM activations
+        JOIN font_files ON font_files.id = activations.font_file_id
+        WHERE activations.platform = ? AND activations.state = 'active'
+        """,
+        (platform_name,),
+    ).fetchall()
+
+    processed: list[str] = []
+    errors: list[tuple[str, str]] = []
+    for row in rows:
+        try:
+            provider.activate(row["path"])
+            _mark_active(conn, row["id"], platform_name, now, expires_at=row["expires_at"])
+            processed.append(row["path"])
+        except Exception as exc:
+            errors.append((row["path"], str(exc)))
+
+    conn.commit()
+    return ActivationResult(label="restored", processed=processed, errors=errors)
+
+
 def disable_family(
     conn: sqlite3.Connection, family_name: str, provider: ActivationProvider | None = None
 ) -> ActivationResult:
