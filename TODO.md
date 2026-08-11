@@ -21,7 +21,6 @@ DONE.md for what each one actually does and how it was verified. One open follow
 ## V1.5 — Activation Manager follow-ups
 V1.5 itself (4-state model, activation sets, temporary activation, startup restore, conflict
 handling) is done as of 2026-08-11 — see DONE.md. What's left is infra/polish around it:
-- [ ] OS-level scheduling for `fontctl deactivate-expired` and `fontctl startup` (currently the user has to run them manually or wire their own cron/Task Scheduler/login-item entry — the tool intentionally has no background daemon, per its CLI-first, no-magic-process design, but a documented setup recipe per OS would help)
 - [ ] Per-file activation command — `activate_family`/`activate_set` only operate on whole families/sets, so once a conflict picks a winner (lowest font_file id, deterministic), there's currently no way to activate the *other* file under a conflicting face instead without removing/disabling the winner first. A `fontctl activate-file <path>` (or similar) would let a user deliberately resolve a conflict in favor of the non-default file.
 
 ## GUI

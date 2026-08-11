@@ -5,14 +5,12 @@ Activate → Use — local-first, non-destructive, no cloud/account.
 
 Full design rationale, schema, and roadmap: [docs/proposal.md](docs/proposal.md).
 Current status: [DONE.md](DONE.md) / [TODO.md](TODO.md).
+OS scheduling setup (cron/launchd/Task Scheduler): [docs/scheduling.md](docs/scheduling.md).
 
 ## Status
 
-All 6 "Πυρήνας v1" must-haves from the proposal are implemented: scan/parse,
-duplicate & corruption detection, version/glyph comparison, tags &
-collections, preview, and real activation on macOS (verified on hardware —
-Windows/Linux activation are still stubs). See DONE.md/TODO.md for the
-detailed breakdown.
+V1, V1.5, and V2 are complete. All three activation providers (macOS, Windows, Linux)
+verified on real hardware. See DONE.md/TODO.md for the detailed breakdown.
 
 ## Layout
 
