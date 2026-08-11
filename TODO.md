@@ -2,13 +2,6 @@
 
 Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled — pick items up in whatever order makes sense when picking work back up.
 
-## V1.5 — Activation Manager follow-ups
-V1.5 itself (4-state model, activation sets, temporary activation, startup restore, conflict
-handling) is done as of 2026-08-11 — see DONE.md. What's left is infra/polish around it:
-- [ ] OS-level scheduling for `fontctl deactivate-expired` and `fontctl startup` (currently the user has to run them manually or wire their own cron/Task Scheduler/login-item entry — the tool intentionally has no background daemon, per its CLI-first, no-magic-process design, but a documented setup recipe per OS would help)
-- [ ] Real-hardware verification of Linux activation (`platforms/linux.py` was built and unit-tested with mocked `fc-cache`/symlinks on 2026-08-11, same as macOS's original implementation, but never run against an actual Linux machine — do that before fully trusting it, the way macOS activation was confirmed on real hardware)
-- [ ] Per-file activation command — `activate_family`/`activate_set` only operate on whole families/sets, so once a conflict picks a winner (lowest font_file id, deterministic), there's currently no way to activate the *other* file under a conflicting face instead without removing/disabling the winner first. A `fontctl activate-file <path>` (or similar) would let a user deliberately resolve a conflict in favor of the non-default file.
-
 ## V2 — Intelligence
 - [ ] Smart collections (query language over tags/metadata — `collections.is_smart`/`smart_query` columns already exist, unused)
 - [ ] License metadata / license conflict detection (`font_files.license` is captured at parse time but nothing does anything with it yet)
@@ -28,6 +21,13 @@ handling) is done as of 2026-08-11 — see DONE.md. What's left is infra/polish 
 - [ ] AI mood tagging — deprioritized per proposal's own judgment (subjective, needs a model)
 - [ ] Visual/image-to-font matcher — deprioritized (needs a large reference dataset)
 - [ ] Cloud/team sync
+
+## V1.5 — Activation Manager follow-ups
+V1.5 itself (4-state model, activation sets, temporary activation, startup restore, conflict
+handling) is done as of 2026-08-11 — see DONE.md. What's left is infra/polish around it:
+- [ ] OS-level scheduling for `fontctl deactivate-expired` and `fontctl startup` (currently the user has to run them manually or wire their own cron/Task Scheduler/login-item entry — the tool intentionally has no background daemon, per its CLI-first, no-magic-process design, but a documented setup recipe per OS would help)
+- [ ] Real-hardware verification of Linux activation (`platforms/linux.py` was built and unit-tested with mocked `fc-cache`/symlinks on 2026-08-11, same as macOS's original implementation, but never run against an actual Linux machine — do that before fully trusting it, the way macOS activation was confirmed on real hardware)
+- [ ] Per-file activation command — `activate_family`/`activate_set` only operate on whole families/sets, so once a conflict picks a winner (lowest font_file id, deterministic), there's currently no way to activate the *other* file under a conflicting face instead without removing/disabling the winner first. A `fontctl activate-file <path>` (or similar) would let a user deliberately resolve a conflict in favor of the non-default file.
 
 ## GUI
 - [ ] Framework decision (Tauri vs Electron) — explicitly deferred until V1.5+, not decided
@@ -54,4 +54,3 @@ of feasibility:
 
 ## Deprioritized — not near-term
 - [ ] SVG preview export (vector glyph outlines via `fontTools.pens.SVGPathPen`, alongside the existing PNG raster export) — tech stack section says preview should "export PNG/SVG", but the user judged it out of scope for now on 2026-08-10: revisit much later, not soon
-
