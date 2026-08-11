@@ -23,6 +23,7 @@ from glyphmatrix.core.collections import (
     FAVORITES_COLLECTION_NAME,
     add_face_to_collection,
     create_collection,
+    create_smart_collection,
     find_collection_id,
     get_or_create_favorites_collection,
     list_collection_faces,
@@ -602,6 +603,27 @@ def collection_create(ctx: click.Context, name: str, parent_name: str | None) ->
     click.echo(f"created collection '{name}'{suffix}")
 
 
+@collection.command(name="create-smart")
+@click.argument("name")
+@click.argument("query")
+@click.option("--parent", "parent_name", default=None)
+@click.pass_context
+def collection_create_smart(
+    ctx: click.Context, name: str, query: str, parent_name: str | None
+) -> None:
+    """QUERY: space-separated field:value terms (AND), groups split on
+    ' OR ' (OR) — e.g. 'foundry:Adobe style:Regular OR tag:script'.
+    Fields: family, style, foundry, tag, weight, width, source, license,
+    version. Membership is computed live, not stored."""
+    conn = _connect(ctx)
+    try:
+        create_smart_collection(conn, name, query, parent_name)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    suffix = f" under '{parent_name}'" if parent_name else ""
+    click.echo(f"created smart collection '{name}'{suffix}: {query}")
+
+
 @collection.command(name="add")
 @click.argument("collection_name", metavar="COLLECTION")
 @click.argument("family")
@@ -616,7 +638,10 @@ def collection_add(ctx: click.Context, collection_name: str, family: str, style:
     if face_id is None:
         raise click.ClickException(f"no such face: {family} {style}")
 
-    add_face_to_collection(conn, collection_id, face_id)
+    try:
+        add_face_to_collection(conn, collection_id, face_id)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
     click.echo(f"added {family} {style} to '{collection_name}'")
 
 
@@ -634,7 +659,11 @@ def collection_remove(ctx: click.Context, collection_name: str, family: str, sty
     if face_id is None:
         raise click.ClickException(f"no such face: {family} {style}")
 
-    if remove_face_from_collection(conn, collection_id, face_id):
+    try:
+        removed = remove_face_from_collection(conn, collection_id, face_id)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    if removed:
         click.echo(f"removed {family} {style} from '{collection_name}'")
     else:
         click.echo(f"{family} {style} was not in '{collection_name}'")
@@ -655,7 +684,8 @@ def collection_list(ctx: click.Context, as_json: bool) -> None:
         return
     for c in collections_:
         parent = f" (in {c['parent_name']})" if c["parent_name"] else ""
-        click.echo(f"{c['name']:<20} {c['face_count']} face(s){parent}")
+        smart = " [smart]" if c["is_smart"] else ""
+        click.echo(f"{c['name']:<20} {c['face_count']} face(s){parent}{smart}")
 
 
 @collection.command(name="show")

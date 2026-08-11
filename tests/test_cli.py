@@ -642,7 +642,9 @@ def test_fontctl_collection_list(tmp_path):
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert payload == [{"name": "Favorites", "parent_name": None, "face_count": 1}]
+    assert payload == [
+        {"name": "Favorites", "parent_name": None, "is_smart": False, "face_count": 1}
+    ]
 
 
 def test_fontctl_collection_remove(tmp_path):
@@ -656,6 +658,73 @@ def test_fontctl_collection_remove(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "removed Arial Regular from 'Favorites'" in result.output
+
+
+def test_fontctl_collection_create_smart_and_show(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)  # Arial Regular + Bold
+
+    create_result = runner.invoke(
+        fontctl, ["--db", str(db_path), "collection", "create-smart", "Bold Faces", "style:Bold"]
+    )
+    assert create_result.exit_code == 0, create_result.output
+    assert "smart collection" in create_result.output
+
+    show_result = runner.invoke(fontctl, ["--db", str(db_path), "collection", "show", "Bold Faces"])
+    assert show_result.exit_code == 0, show_result.output
+    assert "Arial Bold" in show_result.output
+    assert "Arial Regular" not in show_result.output
+
+
+def test_fontctl_collection_create_smart_invalid_query_errors(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "collection", "create-smart", "Broken", "nonsense:value"]
+    )
+
+    assert result.exit_code != 0
+    assert "unknown smart-query field" in result.output
+
+
+def test_fontctl_collection_list_marks_smart_collections(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(
+        fontctl, ["--db", str(db_path), "collection", "create-smart", "Bold Faces", "style:Bold"]
+    )
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "collection", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "[smart]" in result.output
+
+
+def test_fontctl_collection_add_to_smart_collection_errors(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(
+        fontctl, ["--db", str(db_path), "collection", "create-smart", "Bold Faces", "style:Bold"]
+    )
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "collection", "add", "Bold Faces", "Arial", "Regular"]
+    )
+
+    assert result.exit_code != 0
+    assert "cannot manually add faces to a smart collection" in result.output
+
+
+def test_fontctl_set_activate_works_on_smart_collection(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(
+        fontctl, ["--db", str(db_path), "collection", "create-smart", "Bold Faces", "style:Bold"]
+    )
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "set", "activate", "Bold Faces"])
+
+    assert result.exit_code == 0, result.output
+    assert "activated 1 file(s) for Bold Faces" in result.output
 
 
 def test_fontctl_preview_writes_png(tmp_path):

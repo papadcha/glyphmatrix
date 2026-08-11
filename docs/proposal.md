@@ -182,6 +182,30 @@ family+style στο OS/apps τη φορά.
 ο νικητής (σημειωμένο στο TODO.md ως πιθανό follow-up: per-file activation
 command).
 
+## Smart Collections (2026-08-11 — πρώτο κομμάτι του V2 Intelligence)
+
+Χρησιμοποιεί τα `collections.is_smart`/`smart_query` — προβλεπόμενα στο
+schema από την πρώτη κατάψυξη, χωρίς λογική μέχρι τώρα ("ενεργοποιείται
+στο V2", όπως έλεγε το σχόλιο). Μικρή query γλώσσα (DNF): `field:value`
+όροι χωρισμένοι με space γίνονται AND, ομάδες χωρισμένες με ` OR ` (χωρίς
+distinction πεζών/κεφαλαίων) γίνονται OR — χωρίς παρενθέσεις, χωρίς μικτή
+προτεραιότητα AND/OR. Ίδιο πνεύμα με το `fontctl search`: "φθηνή query
+γλώσσα, όχι NLP". Πεδία: `family`, `style`, `foundry`, `tag`, `weight`
+(αριθμητικό), `width`, `source`, `license`, `version`· μια γυμνή λέξη
+ταιριάζει σε family/style/foundry/tag όπως το free-text term του search.
+
+```
+fontctl collection create-smart <name> <query>
+```
+
+Η ιδιότητα μέλους **υπολογίζεται ζωντανά**, δεν αποθηκεύεται —
+`list_collection_faces`/`list_collection_face_ids` ελέγχουν `is_smart`
+εσωτερικά και αγνοούν το `collection_faces` (που μένει άδειο για smart
+collections). Αυτό σημαίνει ότι το `fontctl set activate/deactivate`
+δουλεύει ήδη σε smart collection δωρεάν, αφού τα activation sets ήταν
+ήδη sugar πάνω από τα collections. Χειροκίνητο add/remove σε smart
+collection απορρίπτεται με σαφές μήνυμα.
+
 ## Η δική μου κρίση πάνω στις προτάσεις
 
 - **Συμφωνώ** με το activation-on-demand ως κεντρικό feature — είναι αυτό που

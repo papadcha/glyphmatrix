@@ -4,8 +4,10 @@ from glyphmatrix.core.collections import (
     FAVORITES_COLLECTION_NAME,
     add_face_to_collection,
     create_collection,
+    create_smart_collection,
     find_collection_id,
     get_or_create_favorites_collection,
+    list_collection_face_ids,
     list_collection_faces,
     list_collections,
     remove_face_from_collection,
@@ -102,3 +104,76 @@ def test_get_or_create_favorites_collection_reuses_manually_created_one():
     manual_id = create_collection(conn, FAVORITES_COLLECTION_NAME)
 
     assert get_or_create_favorites_collection(conn) == manual_id
+
+
+def test_create_smart_collection_and_list_faces(tmp_path):
+    conn = _conn()
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    build_test_font(tmp_path / "Arial-Bold.ttf", family="Arial", style="Bold")
+    ingest_directory(conn, tmp_path)
+
+    create_smart_collection(conn, "Bold Faces", "style:Bold")
+
+    faces = list_collection_faces(conn, find_collection_id(conn, "Bold Faces"))
+    assert faces == [{"family": "Arial", "style": "Bold"}]
+
+
+def test_smart_collection_membership_updates_as_library_changes(tmp_path):
+    conn = _conn()
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    ingest_directory(conn, tmp_path)
+    create_smart_collection(conn, "Bold Faces", "style:Bold")
+    collection_id = find_collection_id(conn, "Bold Faces")
+    assert list_collection_faces(conn, collection_id) == []
+
+    build_test_font(tmp_path / "Arial-Bold.ttf", family="Arial", style="Bold")
+    ingest_directory(conn, tmp_path)
+
+    assert list_collection_faces(conn, collection_id) == [{"family": "Arial", "style": "Bold"}]
+
+
+def test_create_smart_collection_rejects_bad_query():
+    conn = _conn()
+    with pytest.raises(ValueError):
+        create_smart_collection(conn, "Broken", "nonsense:value")
+    assert find_collection_id(conn, "Broken") is None  # never created
+
+
+def test_cannot_manually_add_face_to_smart_collection(tmp_path):
+    conn = _conn()
+    face_id = _ingested_face_id(conn, tmp_path)
+    create_smart_collection(conn, "Bold Faces", "style:Bold")
+    collection_id = find_collection_id(conn, "Bold Faces")
+
+    with pytest.raises(ValueError):
+        add_face_to_collection(conn, collection_id, face_id)
+
+
+def test_cannot_manually_remove_face_from_smart_collection(tmp_path):
+    conn = _conn()
+    create_smart_collection(conn, "Bold Faces", "style:Bold")
+    collection_id = find_collection_id(conn, "Bold Faces")
+
+    with pytest.raises(ValueError):
+        remove_face_from_collection(conn, collection_id, 1)
+
+
+def test_list_collections_shows_computed_face_count_for_smart_collections(tmp_path):
+    conn = _conn()
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    build_test_font(tmp_path / "Verdana-Regular.ttf", family="Verdana", style="Regular")
+    ingest_directory(conn, tmp_path)
+    create_smart_collection(conn, "All Regular", "style:Regular")
+
+    entry = next(c for c in list_collections(conn) if c["name"] == "All Regular")
+    assert entry["is_smart"] is True
+    assert entry["face_count"] == 2
+
+
+def test_list_collection_face_ids_works_for_smart_collections(tmp_path):
+    conn = _conn()
+    face_id = _ingested_face_id(conn, tmp_path)  # Arial Regular
+    create_smart_collection(conn, "All Regular", "style:Regular")
+    collection_id = find_collection_id(conn, "All Regular")
+
+    assert list_collection_face_ids(conn, collection_id) == [face_id]
