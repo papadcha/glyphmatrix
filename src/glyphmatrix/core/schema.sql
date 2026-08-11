@@ -138,6 +138,15 @@ CREATE TABLE IF NOT EXISTS validation_issues (
     resolved_at TEXT             -- NULL = still active, avoids duplicate historical issues
 );
 
+-- Maps a filesystem directory to a collection for project-based activation.
+-- Path matching walks up from the given dir to find the nearest ancestor mapping.
+CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY,
+    path TEXT NOT NULL UNIQUE,
+    collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS scan_runs (
     id INTEGER PRIMARY KEY,
     started_at TEXT DEFAULT CURRENT_TIMESTAMP,

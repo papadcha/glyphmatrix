@@ -22,6 +22,8 @@ from glyphmatrix.core.activation_service import (
 )
 from glyphmatrix.core.backup import backup_database, restore_database
 from glyphmatrix.core.catalog import export_catalog
+from glyphmatrix.core.doc_fonts import extract_font_names, match_library_families
+from glyphmatrix.core.projects import find_project_collection, list_projects, set_project, unset_project
 from glyphmatrix.core.gf_config import get_api_key, set_api_key
 from glyphmatrix.core.google_fonts import download_family, get_family, search_catalog, get_catalog
 from glyphmatrix.core.collections import (
@@ -1195,6 +1197,181 @@ def restore(ctx: click.Context, source_path: str, yes: bool) -> None:
         )
     restore_database(source_path, db_path)
     click.echo(f"restored {db_path} from {source_path}")
+
+
+@fontctl.group()
+def project() -> None:
+    """Associate directories and documents with font collections for one-command activation."""
+
+
+@project.command(name="set")
+@click.argument("directory", type=click.Path(exists=True, file_okay=False))
+@click.argument("collection")
+@click.pass_context
+def project_set(ctx: click.Context, directory: str, collection: str) -> None:
+    """Map a directory to a collection. fontctl project activate will use it."""
+    conn = _connect(ctx)
+    try:
+        set_project(conn, directory, collection)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"project '{directory}' → '{collection}'")
+
+
+@project.command(name="unset")
+@click.argument("directory", type=click.Path())
+@click.pass_context
+def project_unset(ctx: click.Context, directory: str) -> None:
+    """Remove the collection mapping for a directory."""
+    conn = _connect(ctx)
+    if unset_project(conn, directory):
+        click.echo(f"removed project mapping for '{directory}'")
+    else:
+        click.echo(f"no mapping found for '{directory}'")
+
+
+@project.command(name="list")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def project_list(ctx: click.Context, as_json: bool) -> None:
+    """Show all directory → collection mappings."""
+    conn = _connect(ctx)
+    mappings = list_projects(conn)
+    if as_json:
+        click.echo(json.dumps(mappings))
+        return
+    if not mappings:
+        click.echo("no project mappings yet — use `fontctl project set <dir> <collection>`")
+        return
+    for m in mappings:
+        click.echo(f"{m['path']:<50} → {m['collection']}")
+
+
+@project.command(name="activate")
+@click.option("--path", "directory", default=None, type=click.Path(),
+              help="Directory to look up (default: current working directory)")
+@click.option("--doc", "doc_path", default=None, type=click.Path(exists=True, dir_okay=False),
+              help="Document to extract font names from (.pdf, .docx, .odt, .odp)")
+@click.option("--for", "duration", default=None, metavar="DURATION",
+              help="Auto-expire after this long, e.g. 30m/2h/1d.")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def project_activate(
+    ctx: click.Context,
+    directory: str | None,
+    doc_path: str | None,
+    duration: str | None,
+    as_json: bool,
+) -> None:
+    """Activate fonts for the current project or a document.
+
+    With --path (or no flags, uses CWD): finds the nearest ancestor directory
+    that has a project mapping and activates its collection.
+
+    With --doc: extracts font names from the document and activates any that
+    are in your library. Can be combined with --path (project fonts first,
+    then document fonts on top).
+    """
+    import os
+    conn = _connect(ctx)
+    all_results: list[ActivationResult] = []
+
+    if doc_path is None and directory is None:
+        directory = os.getcwd()
+
+    if directory is not None:
+        collection_name = find_project_collection(conn, directory)
+        if collection_name is None:
+            raise click.ClickException(
+                f"no project mapping found for '{directory}' or any parent directory"
+            )
+        try:
+            result = activate_set(conn, collection_name, duration=duration)
+        except ValueError as exc:
+            raise click.ClickException(str(exc))
+        if result is None:
+            raise click.ClickException(f"collection '{collection_name}' not found")
+        all_results.append(result)
+
+    if doc_path is not None:
+        try:
+            doc_names = extract_font_names(doc_path)
+        except ValueError as exc:
+            raise click.ClickException(str(exc))
+        matched, unmatched = match_library_families(conn, doc_names)
+        for family in matched:
+            try:
+                result = activate_family(conn, family, duration=duration)
+            except ValueError as exc:
+                raise click.ClickException(str(exc))
+            all_results.append(result)
+        if unmatched and not as_json:
+            click.echo(f"not in library ({len(unmatched)}): {', '.join(unmatched)}")
+
+    if as_json:
+        click.echo(json.dumps([
+            {"label": r.label, "processed": r.processed,
+             "errors": [{"path": p, "error": e} for p, e in r.errors]}
+            for r in all_results
+        ]))
+        return
+
+    for result in all_results:
+        _echo_activation_result(result, as_json=False, verb="activated")
+
+
+@project.command(name="deactivate")
+@click.option("--path", "directory", default=None, type=click.Path(),
+              help="Directory to look up (default: current working directory)")
+@click.option("--doc", "doc_path", default=None, type=click.Path(exists=True, dir_okay=False),
+              help="Document whose fonts to deactivate.")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def project_deactivate(
+    ctx: click.Context,
+    directory: str | None,
+    doc_path: str | None,
+    as_json: bool,
+) -> None:
+    """Deactivate fonts for the current project or a document."""
+    import os
+    conn = _connect(ctx)
+    all_results: list[ActivationResult] = []
+
+    if doc_path is None and directory is None:
+        directory = os.getcwd()
+
+    if directory is not None:
+        collection_name = find_project_collection(conn, directory)
+        if collection_name is None:
+            raise click.ClickException(
+                f"no project mapping found for '{directory}' or any parent directory"
+            )
+        result = deactivate_set(conn, collection_name)
+        if result is None:
+            raise click.ClickException(f"collection '{collection_name}' not found")
+        all_results.append(result)
+
+    if doc_path is not None:
+        try:
+            doc_names = extract_font_names(doc_path)
+        except ValueError as exc:
+            raise click.ClickException(str(exc))
+        matched, _ = match_library_families(conn, doc_names)
+        for family in matched:
+            result = deactivate_family(conn, family)
+            all_results.append(result)
+
+    if as_json:
+        click.echo(json.dumps([
+            {"label": r.label, "processed": r.processed,
+             "errors": [{"path": p, "error": e} for p, e in r.errors]}
+            for r in all_results
+        ]))
+        return
+
+    for result in all_results:
+        _echo_activation_result(result, as_json=False, verb="deactivated")
 
 
 def _require_api_key() -> str:
