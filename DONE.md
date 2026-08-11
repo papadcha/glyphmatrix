@@ -95,9 +95,16 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] **Verified on real hardware**: `fontctl features Arial Regular` against real Windows `arial.ttf` correctly listed all 29 features (c2sc, calt, ccmp, cpsp, dlig, dnom, fina, frac, init, isol, kern, liga, lnum, locl, mark, medi, mkmk, numr, onum, pnum, rclt, rlig, salt, smcp, ss01-ss03, tnum, unic) with correct table attribution (GSUB vs. GPOS) and human-readable names; `Courier New` scanned cleanly alongside it with no crash.
 - [x] Test fixtures use `FontBuilder.addOpenTypeFeatures` (compiles real FEA syntax into real GSUB/GPOS tables) rather than mocking — covers GSUB-only, GPOS-only, a feature merged across both tables, ssNN/cvNN naming, and the raw-tag fallback for an unregistered tag. 276/276 tests passing.
 
+## PANOSE Fine Classification (2026-08-11)
+- [x] **Checked the real-library concern before building, per TODO.md's own caveat**: scanned all 323 real fonts in `C:\Windows\Fonts` and found 319 (98.8%) have a non-zero `OS/2.panose` vector — the opposite of the worry that motivated deferring this item (which was based on DejaVu Sans's `sFamilyClass` being unset, a different field). Went ahead on that evidence.
+- [x] `core/panose.py` (`classify_panose`) decodes the 10-byte PANOSE vector into one fine-grained tag: for `bFamilyType == 2` (Latin Text, the common case for body/display fonts), decodes `bSerifStyle` into 14 specific styles (cove, obtuse-cove, square-cove, square, thin, oval, exaggerated, triangle, normal-sans, obtuse-sans, perp-sans, flared, rounded) — finer than `sFamilyClass`'s single flat "sans-serif"/"serif" buckets. For the other family kinds (hand-written/decorative/symbolic), decodes only `bFamilyType` itself — each of those kinds has its own byte-2 meaning table, not decoded here (same "ship the well-understood common case honestly" call as license classification, rather than guessing at three more curated tables). All-zero/unset PANOSE (still ~1% of real fonts) yields no tag, same treatment as `sFamilyClass == 0`.
+- [x] Wired into `parser.py` (new `ParsedFont.panose_class` field) and auto-tagged at scan time in `ingest.py`, identically to the existing `family_class` auto-tag — so the new tags work for free everywhere tags already do: `fontctl tag find`, `fontctl search`, and smart collections (`tag:normal-sans`).
+- [x] **Verified on real hardware**, and it's a clean complementary result, not a duplicate: `arial.ttf` tags as `sans-serif` (from `sFamilyClass`) **and** `normal-sans` (from PANOSE, finer); `times.ttf` tags as `oldstyle-serif` **and** `cove`; `comic.ttf` tags as `script` **and** `hand-written`. Confirmed a smart collection (`tag:normal-sans`) correctly matched only Arial among the three.
+- [x] 286/286 tests passing.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 276/276 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
+- [x] 286/286 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

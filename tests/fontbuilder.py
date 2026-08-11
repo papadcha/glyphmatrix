@@ -17,6 +17,7 @@ def build_test_font(
     family_class: int | None = None,
     extra_codepoints: dict[int, str] | None = None,
     opentype_features: str | None = None,
+    panose: tuple[int, ...] | None = None,
 ) -> Path:
     """Build a minimal valid TTF for parser tests: .notdef + A (square outline
     of a_glyph_size), optionally + B, mapped via cmap. extra_codepoints adds
@@ -75,6 +76,13 @@ def build_test_font(
         os2_kwargs["sFamilyClass"] = family_class
     fb.setupOS2(**os2_kwargs)
     fb.setupPost()
+    if panose is not None:
+        fields = (
+            "bFamilyType", "bSerifStyle", "bWeight", "bProportion", "bContrast",
+            "bStrokeVariation", "bArmStyle", "bLetterForm", "bMidline", "bXHeight",
+        )
+        for field, value in zip(fields, panose):
+            setattr(fb.font["OS/2"].panose, field, value)
     if opentype_features is not None:
         fb.addOpenTypeFeatures(opentype_features)
 

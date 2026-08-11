@@ -145,6 +145,8 @@ def ingest_directory(conn: sqlite3.Connection, root: str | Path, source: str = "
             face_id = find_or_create_face(conn, family_id, parsed)
             if parsed.family_class:
                 add_tags(conn, face_id, [parsed.family_class])
+            if parsed.panose_class:
+                add_tags(conn, face_id, [parsed.panose_class])
             _, status = ingest_font_file(conn, face_id, parsed, source=source)
             seen_paths.add(str(font_path))
             if status == "added":

@@ -50,6 +50,22 @@ def test_parse_font_file_family_class_none_when_unset(tmp_path):
     assert parsed.family_class is None
 
 
+def test_parse_font_file_extracts_panose_class(tmp_path):
+    sans_path = build_test_font(tmp_path / "sans.ttf", panose=(2, 11, 5, 3, 2, 2, 2, 2, 2, 4))
+    flared_path = build_test_font(tmp_path / "flared.ttf", panose=(2, 14, 5, 3, 2, 2, 2, 2, 2, 4))
+
+    assert parse_font_file(sans_path).panose_class == "normal-sans"
+    assert parse_font_file(flared_path).panose_class == "flared"
+
+
+def test_parse_font_file_panose_class_none_when_unset(tmp_path):
+    font_path = build_test_font(tmp_path / "test.ttf")  # panose defaults to all-zero
+
+    parsed = parse_font_file(font_path)
+
+    assert parsed.panose_class is None
+
+
 def test_parse_font_file_extracts_glyph_metadata(tmp_path):
     font_path = build_test_font(tmp_path / "test.ttf", extra_glyph=True)
 

@@ -71,6 +71,29 @@ def test_ingest_directory_no_family_class_tag_when_unclassified(tmp_path):
     assert list_tags_for_face(conn, face_id) == []
 
 
+def test_ingest_directory_auto_tags_panose_class(tmp_path):
+    build_test_font(
+        tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular",
+        panose=(2, 14, 5, 3, 2, 2, 2, 2, 2, 4),
+    )
+    conn = _conn()
+
+    ingest_directory(conn, tmp_path)
+
+    face_id = find_face_id(conn, "Arial", "Regular")
+    assert "flared" in list_tags_for_face(conn, face_id)
+
+
+def test_ingest_directory_no_panose_tag_when_unset(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+
+    ingest_directory(conn, tmp_path)
+
+    face_id = find_face_id(conn, "Arial", "Regular")
+    assert list_tags_for_face(conn, face_id) == []
+
+
 def test_ingest_directory_tracks_unsupported_formats_and_flags_them(tmp_path):
     (tmp_path / "OldFont.pfb").write_bytes(b"placeholder Type 1 bytes")
     conn = _conn()

@@ -7,6 +7,8 @@ from pathlib import Path
 from fontTools.pens.recordingPen import RecordingPen
 from fontTools.ttLib import TTFont
 
+from glyphmatrix.core.panose import classify_panose
+
 # CSS-ish label per OS/2.usWidthClass (1-9). None if usWidthClass is absent/unknown.
 _WIDTH_CLASSES = {
     1: "ultra-condensed",
@@ -66,6 +68,7 @@ class ParsedFont:
     glyph_count: int
     glyphs: list[ParsedGlyph]
     family_class: str | None = None
+    panose_class: str | None = None
     metadata_complete: bool = True
 
 
@@ -146,12 +149,21 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         weight = None
         width = None
         family_class = None
+        panose_class = None
         if "OS/2" in font:
             os2 = font["OS/2"]
             weight = getattr(os2, "usWeightClass", None)
             width = _WIDTH_CLASSES.get(getattr(os2, "usWidthClass", None))
             class_id = getattr(os2, "sFamilyClass", 0) >> 8
             family_class = _FAMILY_CLASSES.get(class_id)
+            panose = getattr(os2, "panose", None)
+            if panose is not None:
+                panose_bytes = (
+                    panose.bFamilyType, panose.bSerifStyle, panose.bWeight,
+                    panose.bProportion, panose.bContrast, panose.bStrokeVariation,
+                    panose.bArmStyle, panose.bLetterForm, panose.bMidline, panose.bXHeight,
+                )
+                panose_class = classify_panose(panose_bytes)
 
         is_variable = "fvar" in font
         axes = None
@@ -177,4 +189,5 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         glyph_count=len(glyphs),
         glyphs=glyphs,
         family_class=family_class,
+        panose_class=panose_class,
     )
