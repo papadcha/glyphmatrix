@@ -3,12 +3,12 @@
 Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled — pick items up in whatever order makes sense when picking work back up.
 
 ## V2 — Intelligence
-- [ ] License metadata / license conflict detection (`font_files.license` is captured at parse time but nothing does anything with it yet)
 - [ ] Glyph inspector (UI-facing; `font_glyphs` already has the per-glyph data `compare` uses)
 - [ ] Language coverage checks
 - [ ] OpenType features
 - [ ] Font pairing suggestions
 - [ ] Finer-grained classification via PANOSE (`OS/2.panose`, 10-byte vector: family type, serif style, weight, proportion, contrast, stroke variation, arm style, letterform, midline, x-height) — auto-tagging currently only uses `sFamilyClass`'s ~10 broad categories. PANOSE could distinguish e.g. Grotesque vs. Humanist vs. Geometric sans, but many fonts leave it unset/default (all-zero), so value is inconsistent across real-world fonts — worth checking against the user's actual library before investing in the mapping. **Confirmed while testing smart collections on 2026-08-11**: a real, professionally-made font (DejaVu Sans) had `sFamilyClass` at 0 (unset) — the `tag:sans-serif`-style smart query genuinely found nothing for it, not a bug, just the classification gap this item is about.
+- [ ] License classification is deliberately conservative (`core/licenses.py`, keyword matching against license text — no NLP). A real false positive was already found and fixed on 2026-08-11: "All Rights Reserved" alone was originally treated as a Commercial/Proprietary signal, but that phrase is standard copyright-ownership boilerplate that shows up in plenty of fully permissive licenses too (DejaVu Sans's Bitstream Vera license does this). If more license text patterns turn out unreliable the same way, prefer removing the signature (falling back to "Unknown") over trying to make the matching cleverer — a wrong confident answer is worse than an honest "don't know" for something with real licensing implications.
 
 ## V3 — Ecosystem
 - [ ] Google Fonts integration

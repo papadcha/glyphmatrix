@@ -303,6 +303,59 @@ def test_fontctl_conflicts_none_found(tmp_path):
     assert "no conflicts found" in result.output
 
 
+def test_fontctl_licenses_none_found(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "licenses"])
+
+    assert result.exit_code == 0, result.output
+    assert "no license conflicts found" in result.output
+
+
+def test_fontctl_licenses_reports_disagreement(tmp_path):
+    folder_a = tmp_path / "a"
+    folder_a.mkdir()
+    folder_b = tmp_path / "b"
+    folder_b.mkdir()
+    build_test_font(folder_a / "Arial-Regular.ttf", family="Arial", style="Regular", a_glyph_size=700)
+    build_test_font(folder_b / "Arial-Alt.ttf", family="Arial", style="Regular", a_glyph_size=500)
+    db_path = tmp_path / "library.db"
+    runner = CliRunner()
+    runner.invoke(fontctl, ["--db", str(db_path), "scan", str(tmp_path)])
+    conn = connect(db_path)
+    conn.execute(
+        "UPDATE font_files SET license = ? WHERE path LIKE '%Arial-Regular%'",
+        ("SIL Open Font License",),
+    )
+    conn.execute(
+        "UPDATE font_files SET license = ? WHERE path LIKE '%Arial-Alt%'",
+        ("Apache License, Version 2.0",),
+    )
+    conn.commit()
+    conn.close()
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "licenses"])
+
+    assert result.exit_code == 0, result.output
+    assert "Arial Regular" in result.output
+    assert "OFL-1.1" in result.output
+    assert "Apache-2.0" in result.output
+
+
+def test_fontctl_info_shows_license_category(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    conn = connect(db_path)
+    conn.execute("UPDATE font_files SET license = ? WHERE path LIKE '%Arial-Regular%'",
+                 ("SIL Open Font License",))
+    conn.commit()
+    conn.close()
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "info", "Arial"])
+
+    assert "license=OFL-1.1" in result.output
+    assert "license=no license info" in result.output  # Arial Bold, untouched
+
+
 def test_fontctl_activate_reports_conflict_error(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()

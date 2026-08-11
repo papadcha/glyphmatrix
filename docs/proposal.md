@@ -206,6 +206,24 @@ collections). Αυτό σημαίνει ότι το `fontctl set activate/deacti
 ήδη sugar πάνω από τα collections. Χειροκίνητο add/remove σε smart
 collection απορρίπτεται με σαφές μήνυμα.
 
+## License Metadata + Conflict Detection (2026-08-11)
+
+Το `font_files.license` (nameID 13, raw κείμενο) εξαγόταν ήδη από το V0
+αλλά ποτέ δεν εμφανιζόταν πουθενά. `core/licenses.py` το ταξινομεί σε
+σύντομη κατηγορία (OFL-1.1, Apache-2.0, MIT, κ.λπ.) με keyword matching —
+`None` αν δεν υπάρχει καθόλου κείμενο, `"Unknown"` αν υπάρχει αλλά δεν
+αναγνωρίζεται. **Δεν** γίνεται auto-tag στο face (όπως το family
+classification) — το license μπορεί νόμιμα να διαφέρει μεταξύ αρχείων
+του ίδιου face, που είναι ακριβώς η "σύγκρουση" που ψάχνει το
+`fontctl licenses`.
+
+Πραγματικό εύρημα από δοκιμή σε πραγματικά fonts: η αρχική λίστα
+κανόνων περιλάμβανε "all rights reserved" → Commercial/Proprietary, αλλά
+αυτή η φράση είναι τυπική δήλωση copyright που εμφανίζεται και σε πλήρως
+ελεύθερες άδειες (π.χ. η DejaVu Sans, license Bitstream Vera). Ο κανόνας
+αφαιρέθηκε — καλύτερα τίμιο "Unknown" παρά σίγουρη λάθος απάντηση σε κάτι
+με πραγματικές νομικές συνέπειες.
+
 ## Η δική μου κρίση πάνω στις προτάσεις
 
 - **Συμφωνώ** με το activation-on-demand ως κεντρικό feature — είναι αυτό που

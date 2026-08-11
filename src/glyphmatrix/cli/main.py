@@ -35,6 +35,7 @@ from glyphmatrix.core.conflicts import list_conflicts
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.ingest import ingest_directory
+from glyphmatrix.core.licenses import classify_license, list_license_conflicts
 from glyphmatrix.core.packages import (
     add_document,
     add_file_to_package,
@@ -153,10 +154,11 @@ def info(ctx: click.Context, family: str, as_json: bool) -> None:
         click.echo(f"  {style}  weight={weight} width={width}{variable}")
         for f in face["files"]:
             expiry = f" (expires {f['expires_at']})" if f["expires_at"] else ""
+            license_category = classify_license(f["license"]) or "no license info"
             click.echo(
                 f"    {f['path']}  {f['format']}  v{f['version'] or '?'}  "
                 f"glyphs={f['glyph_count']}  source={f['source']}  hash={f['content_hash'][:12]}  "
-                f"[{f['activation_state']}]{expiry}"
+                f"license={license_category}  [{f['activation_state']}]{expiry}"
             )
 
 
@@ -351,6 +353,30 @@ def conflicts(ctx: click.Context, as_json: bool) -> None:
         click.echo(f"{c['family']} {c['style'] or '-'} — {len(c['files'])} different files claim this:")
         for f in c["files"]:
             click.echo(f"  {f['path']}  v{f['version'] or '?'}  source={f['source']}")
+
+
+@fontctl.command()
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def licenses(ctx: click.Context, as_json: bool) -> None:
+    """Faces (family+style) whose files disagree on license category —
+    e.g. one classifies OFL-1.1, another Commercial/Proprietary. Could be
+    legitimate dual-licensing, or a mismatched file worth a second look."""
+    conn = _connect(ctx)
+    found = list_license_conflicts(conn)
+
+    if as_json:
+        click.echo(json.dumps(found))
+        return
+
+    if not found:
+        click.echo("no license conflicts found")
+        return
+
+    for c in found:
+        click.echo(f"{c['family']} {c['style'] or '-'} — files disagree on license:")
+        for f in c["files"]:
+            click.echo(f"  {f['path']}  license={f['license_category'] or 'no license info'}")
 
 
 def _echo_activation_result(result: ActivationResult, as_json: bool, verb: str) -> None:
