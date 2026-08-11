@@ -415,6 +415,104 @@ def disable_family(
     return ActivationResult(label=family_name, processed=processed, errors=errors)
 
 
+def activate_file(
+    conn: sqlite3.Connection,
+    path: str,
+    provider: ActivationProvider | None = None,
+    duration: str | None = None,
+) -> ActivationResult:
+    """Activate a specific font file by its exact library path.
+
+    Unlike activate_family/activate_set, this deliberately resolves conflicts:
+    if a *different* file for the same face is currently active, it is
+    deactivated first so the requested file can take its place. That's the
+    whole point of the command — giving the user a way to pick the non-default
+    winner when two files claim the same family+style."""
+    provider = provider or get_provider()
+    platform_name = platform_module.system().lower()
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    expires_at = (now_dt + parse_duration(duration)).isoformat() if duration else None
+
+    row = conn.execute(
+        "SELECT id, path, font_face_id FROM font_files WHERE path = ?", (path,)
+    ).fetchone()
+    if row is None:
+        return ActivationResult(
+            label=path, processed=[], errors=[(path, "path not found in library")]
+        )
+
+    current = _current_state(conn, row["id"], platform_name)
+    if current == "disabled":
+        return ActivationResult(
+            label=path,
+            processed=[],
+            errors=[(path, "font is disabled — run `fontctl enable` first")],
+        )
+
+    conflict_path = _conflicting_active_file(conn, row["font_face_id"], row["id"], platform_name)
+    if conflict_path is not None:
+        conflict_row = conn.execute(
+            "SELECT id, path, font_face_id FROM font_files WHERE path = ?", (conflict_path,)
+        ).fetchone()
+        if conflict_row is not None:
+            try:
+                provider.deactivate(conflict_row["path"])
+                _mark_installed(conn, conflict_row["id"], platform_name, now)
+            except Exception as exc:
+                conn.rollback()
+                return ActivationResult(
+                    label=path,
+                    processed=[],
+                    errors=[(conflict_path, f"could not deactivate conflicting file: {exc}")],
+                )
+
+    already_active = current == "active"
+    if not already_active:
+        try:
+            provider.activate(row["path"])
+        except Exception as exc:
+            conn.rollback()
+            return ActivationResult(label=path, processed=[], errors=[(path, str(exc))])
+
+    _mark_active(conn, row["id"], platform_name, now, expires_at=expires_at)
+    conn.commit()
+    return ActivationResult(label=path, processed=[row["path"]], errors=[])
+
+
+def deactivate_file(
+    conn: sqlite3.Connection,
+    path: str,
+    provider: ActivationProvider | None = None,
+) -> ActivationResult:
+    """Deactivate a specific font file by its exact library path."""
+    provider = provider or get_provider()
+    platform_name = platform_module.system().lower()
+    now = datetime.now(timezone.utc).isoformat()
+
+    row = conn.execute(
+        "SELECT id, path, font_face_id FROM font_files WHERE path = ?", (path,)
+    ).fetchone()
+    if row is None:
+        return ActivationResult(
+            label=path, processed=[], errors=[(path, "path not found in library")]
+        )
+
+    current = _current_state(conn, row["id"], platform_name)
+    if current != "active":
+        return ActivationResult(label=path, processed=[row["path"]], errors=[])
+
+    try:
+        provider.deactivate(row["path"])
+        _mark_installed(conn, row["id"], platform_name, now)
+    except Exception as exc:
+        conn.rollback()
+        return ActivationResult(label=path, processed=[], errors=[(path, str(exc))])
+
+    conn.commit()
+    return ActivationResult(label=path, processed=[row["path"]], errors=[])
+
+
 def enable_family(conn: sqlite3.Connection, family_name: str) -> ActivationResult:
     """Clears the disabled flag so future activate calls can succeed
     again — does not itself re-activate anything."""

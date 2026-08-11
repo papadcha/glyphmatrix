@@ -35,6 +35,8 @@ fontctl validate
 fontctl duplicates
 fontctl activate <family>
 fontctl deactivate <family>
+fontctl activate-file <path>
+fontctl deactivate-file <path>
 fontctl tag {add,remove,list,find} ...
 fontctl collection {create,add,remove,list,show} ...
 fontctl preview <family> <style> [--text] [--size] [--waterfall] [-o]

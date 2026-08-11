@@ -10,9 +10,11 @@ import click
 from glyphmatrix.core.activation_service import (
     ActivationResult,
     activate_family,
+    activate_file,
     activate_set,
     deactivate_expired,
     deactivate_family,
+    deactivate_file,
     deactivate_set,
     disable_family,
     enable_family,
@@ -609,6 +611,36 @@ def deactivate(ctx: click.Context, family: str, as_json: bool) -> None:
         raise click.ClickException(f"no such family: {family}")
 
     result = deactivate_family(conn, family)
+    _echo_activation_result(result, as_json, verb="deactivated")
+
+
+@fontctl.command(name="activate-file")
+@click.argument("path", type=click.Path())
+@click.option("--for", "duration", default=None, metavar="DURATION",
+              help="Auto-expire after this long, e.g. 30m/2h/1d.")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def activate_file_cmd(ctx: click.Context, path: str, duration: str | None, as_json: bool) -> None:
+    """Activate a specific font file by path. Unlike `fontctl activate`, this
+    deliberately resolves conflicts: if a different file for the same
+    family+style is currently active, it is deactivated first so this file
+    can take its place."""
+    conn = _connect(ctx)
+    try:
+        result = activate_file(conn, path, duration=duration)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    _echo_activation_result(result, as_json, verb="activated")
+
+
+@fontctl.command(name="deactivate-file")
+@click.argument("path", type=click.Path())
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def deactivate_file_cmd(ctx: click.Context, path: str, as_json: bool) -> None:
+    """Deactivate a specific font file by path."""
+    conn = _connect(ctx)
+    result = deactivate_file(conn, path)
     _echo_activation_result(result, as_json, verb="deactivated")
 
 
