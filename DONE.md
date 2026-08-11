@@ -41,9 +41,12 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 ## Linux activation (2026-08-11)
 - [x] `platforms/linux.py` — `LinuxActivationProvider`, same symlink-not-copy design as macOS (`~/.local/share/fonts`, never a copy), plus an `fc-cache -f` refresh after each change since fontconfig doesn't reliably pick up new files the way macOS's Font Book does. All the same safety behavior as macOS: idempotent activate, stale-symlink replacement, refuses to touch an unmanaged real file. Fully unit-tested with `subprocess.run` mocked out — **not yet run against a real Linux machine**, unlike macOS (confirmed on hardware) and Windows (confirmed via `EnumFontFamiliesEx`). Flagged in TODO.md as needing that verification before being fully trusted.
 
+## Activation Sets (2026-08-11)
+- [x] `fontctl set activate <name>` / `fontctl set deactivate <name>` — activates/deactivates every face in a collection at once. Sugar over `collections`, same pattern as Favorites: no new schema, an "activation set" is just a collection used this way (`fontctl collection create`/`add` to build it). Refactored `activation_service.py` to extract a shared `_apply_activation` helper behind both family- and set-level activation, so the reference-count-safe idempotency check (skip the provider call when the DB already says the file is in the target state) applies uniformly — previously only `activate_family`/`deactivate_family` had it. `ActivationResult.family` renamed to `.label` since the same result type now represents either a family name or a set name. **Verified on real hardware**: two real fonts (DejaVu Sans, Inconsolata) activated together and deactivated together with single commands.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 154/154 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
+- [x] 165/165 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

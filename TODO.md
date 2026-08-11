@@ -4,7 +4,6 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 
 ## V1.5 — Activation Manager
 - [ ] 4-state model (`available`/`installed`/`active`/`disabled` — schema already supports this, `activations.state` CHECK constraint already lists all four; only the 2-state V0 logic is implemented)
-- [ ] Activation sets (project-based groups of fonts that activate/deactivate together)
 - [ ] Temporary activation
 - [ ] Startup state restore
 - [ ] Conflict handling

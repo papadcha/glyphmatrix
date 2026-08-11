@@ -7,7 +7,13 @@ from pathlib import Path
 
 import click
 
-from glyphmatrix.core.activation_service import ActivationResult, activate_family, deactivate_family
+from glyphmatrix.core.activation_service import (
+    ActivationResult,
+    activate_family,
+    activate_set,
+    deactivate_family,
+    deactivate_set,
+)
 from glyphmatrix.core.backup import backup_database, restore_database
 from glyphmatrix.core.collections import (
     FAVORITES_COLLECTION_NAME,
@@ -320,7 +326,7 @@ def _echo_activation_result(result: ActivationResult, as_json: bool, verb: str) 
         click.echo(
             json.dumps(
                 {
-                    "family": result.family,
+                    "label": result.label,
                     "processed": result.processed,
                     "errors": [{"path": p, "error": e} for p, e in result.errors],
                 }
@@ -328,7 +334,7 @@ def _echo_activation_result(result: ActivationResult, as_json: bool, verb: str) 
         )
         return
 
-    click.echo(f"{verb} {len(result.processed)} file(s) for {result.family}")
+    click.echo(f"{verb} {len(result.processed)} file(s) for {result.label}")
     for path in result.processed:
         click.echo(f"  {path}")
     for path, error in result.errors:
@@ -358,6 +364,37 @@ def deactivate(ctx: click.Context, family: str, as_json: bool) -> None:
         raise click.ClickException(f"no such family: {family}")
 
     result = deactivate_family(conn, family)
+    _echo_activation_result(result, as_json, verb="deactivated")
+
+
+@fontctl.group(name="set")
+def activation_set() -> None:
+    """Activate/deactivate a whole collection at once — an "activation
+    set" is just a collection used this way; build it with
+    `fontctl collection create/add`."""
+
+
+@activation_set.command(name="activate")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def set_activate(ctx: click.Context, name: str, as_json: bool) -> None:
+    conn = _connect(ctx)
+    result = activate_set(conn, name)
+    if result is None:
+        raise click.ClickException(f"no such set: {name}")
+    _echo_activation_result(result, as_json, verb="activated")
+
+
+@activation_set.command(name="deactivate")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def set_deactivate(ctx: click.Context, name: str, as_json: bool) -> None:
+    conn = _connect(ctx)
+    result = deactivate_set(conn, name)
+    if result is None:
+        raise click.ClickException(f"no such set: {name}")
     _echo_activation_result(result, as_json, verb="deactivated")
 
 

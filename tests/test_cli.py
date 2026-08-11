@@ -298,6 +298,66 @@ def test_fontctl_deactivate_plain_output(tmp_path, monkeypatch):
     assert "deactivated 2 file(s) for Arial" in result.output
 
 
+def _set_up_activation_set(runner, db_path):
+    runner.invoke(fontctl, ["--db", str(db_path), "collection", "create", "Body Text"])
+    runner.invoke(fontctl, ["--db", str(db_path), "collection", "add", "Body Text", "Arial", "Regular"])
+    runner.invoke(fontctl, ["--db", str(db_path), "collection", "add", "Body Text", "Arial", "Bold"])
+
+
+def test_fontctl_set_activate_plain_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+    _set_up_activation_set(runner, db_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "set", "activate", "Body Text"])
+
+    assert result.exit_code == 0, result.output
+    assert "activated 2 file(s) for Body Text" in result.output
+
+
+def test_fontctl_set_deactivate_plain_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+    _set_up_activation_set(runner, db_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "set", "activate", "Body Text"])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "set", "deactivate", "Body Text"])
+
+    assert result.exit_code == 0, result.output
+    assert "deactivated 2 file(s) for Body Text" in result.output
+
+
+def test_fontctl_set_activate_json_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+    _set_up_activation_set(runner, db_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "set", "activate", "--json", "Body Text"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["label"] == "Body Text"
+    assert len(payload["processed"]) == 2
+
+
+def test_fontctl_set_activate_unknown_set_errors(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "set", "activate", "Nonexistent"])
+
+    assert result.exit_code != 0
+    assert "no such set" in result.output
+
+
 def test_fontctl_tag_add_and_list_for_face(tmp_path):
     runner, db_path = _scanned_db(tmp_path)
 

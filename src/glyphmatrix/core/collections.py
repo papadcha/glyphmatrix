@@ -72,6 +72,13 @@ def get_or_create_favorites_collection(conn: sqlite3.Connection) -> int:
     return create_collection(conn, FAVORITES_COLLECTION_NAME)
 
 
+def list_collection_face_ids(conn: sqlite3.Connection, collection_id: int) -> list[int]:
+    rows = conn.execute(
+        "SELECT font_face_id FROM collection_faces WHERE collection_id = ?", (collection_id,)
+    ).fetchall()
+    return [row["font_face_id"] for row in rows]
+
+
 def list_collection_faces(conn: sqlite3.Connection, collection_id: int) -> list[dict]:
     rows = conn.execute(
         """

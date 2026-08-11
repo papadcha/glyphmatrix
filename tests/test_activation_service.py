@@ -1,6 +1,13 @@
-from glyphmatrix.core.activation_service import activate_family, deactivate_family
+from glyphmatrix.core.activation_service import (
+    activate_family,
+    activate_set,
+    deactivate_family,
+    deactivate_set,
+)
+from glyphmatrix.core.collections import add_face_to_collection, create_collection
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.ingest import ingest_directory
+from glyphmatrix.core.query import find_face_id
 
 from .fakes import FakeActivationProvider
 from .fontbuilder import build_test_font
@@ -114,3 +121,89 @@ def test_deactivate_family_is_idempotent_against_the_provider(tmp_path):
 
     assert provider.deactivated == []  # nothing to undo, provider not called
     assert len(result.processed) == 1
+
+
+def _build_set(conn, tmp_path, set_name="Body Text"):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    build_test_font(tmp_path / "Verdana-Regular.ttf", family="Verdana", style="Regular")
+    ingest_directory(conn, tmp_path)
+    collection_id = create_collection(conn, set_name)
+    for family, style in [("Arial", "Regular"), ("Verdana", "Regular")]:
+        add_face_to_collection(conn, collection_id, find_face_id(conn, family, style))
+    return collection_id
+
+
+def test_activate_set_activates_every_face_in_the_collection(tmp_path):
+    conn = _conn()
+    _build_set(conn, tmp_path)
+    provider = FakeActivationProvider()
+
+    result = activate_set(conn, "Body Text", provider=provider)
+
+    assert result is not None
+    assert len(result.processed) == 2
+    assert result.label == "Body Text"
+    states = conn.execute("SELECT state FROM activations").fetchall()
+    assert [s["state"] for s in states] == ["active", "active"]
+
+
+def test_activate_set_is_case_insensitive(tmp_path):
+    conn = _conn()
+    _build_set(conn, tmp_path)
+
+    result = activate_set(conn, "body text", provider=FakeActivationProvider())
+
+    assert result is not None
+    assert len(result.processed) == 2
+
+
+def test_activate_set_unknown_set_returns_none(tmp_path):
+    conn = _conn()
+
+    assert activate_set(conn, "Nonexistent", provider=FakeActivationProvider()) is None
+
+
+def test_activate_set_only_touches_its_own_faces(tmp_path):
+    conn = _conn()
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    build_test_font(tmp_path / "Verdana-Regular.ttf", family="Verdana", style="Regular")
+    ingest_directory(conn, tmp_path)
+    collection_id = create_collection(conn, "Just Arial")
+    add_face_to_collection(conn, collection_id, find_face_id(conn, "Arial", "Regular"))
+
+    result = activate_set(conn, "Just Arial", provider=FakeActivationProvider())
+
+    assert result is not None
+    assert len(result.processed) == 1
+    assert "Arial" in result.processed[0]
+
+
+def test_deactivate_set_reverts_every_face(tmp_path):
+    conn = _conn()
+    _build_set(conn, tmp_path)
+    provider = FakeActivationProvider()
+    activate_set(conn, "Body Text", provider=provider)
+
+    result = deactivate_set(conn, "Body Text", provider=provider)
+
+    assert result is not None
+    assert len(result.processed) == 2
+    states = conn.execute("SELECT state FROM activations").fetchall()
+    assert [s["state"] for s in states] == ["installed", "installed"]
+
+
+def test_deactivate_set_unknown_set_returns_none(tmp_path):
+    conn = _conn()
+
+    assert deactivate_set(conn, "Nonexistent", provider=FakeActivationProvider()) is None
+
+
+def test_activate_set_is_idempotent_against_the_provider(tmp_path):
+    conn = _conn()
+    _build_set(conn, tmp_path)
+    provider = FakeActivationProvider()
+
+    activate_set(conn, "Body Text", provider=provider)
+    activate_set(conn, "Body Text", provider=provider)
+
+    assert len(provider.activated) == 2  # not 4 — second call was a no-op per file
