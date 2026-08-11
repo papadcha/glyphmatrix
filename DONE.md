@@ -90,9 +90,14 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] **Verified on real hardware**: `fontctl language Arial Regular` against the real Windows `arial.ttf` correctly reported 11 scripts (Latin 1382, Arabic 582, Common 378, Greek 368, Cyrillic 302, Inherited 146, Hebrew 134, Armenian 96, Coptic 14, Bopomofo 2, Unknown 1); `--script Cyrillic`/`--script Grek` both matched case-insensitively; `--script Vietnamese` and `--script Thaana` (real script, genuinely absent from Arial) correctly distinguished "unrecognized query" from "recognized but unsupported."
 - [x] 270/270 tests passing.
 
+## OpenType Features (2026-08-11)
+- [x] `fontctl features <family> <style>` — lists GSUB/GPOS layout feature tags read straight from the font file (`core/opentype_features.py`), not stored in the DB — same on-demand-from-disk pattern as `preview`/`glyphs --render`, since most fonts have no GSUB/GPOS at all and it isn't part of the `font_glyphs` schema. Curated tag→name table for standard registered tags (liga, smcp, onum, kern, ...) plus pattern rules for `ssNN`/`cvNN` (Stylistic Set/Character Variant N); unrecognized tags fall back to the raw tag rather than a guessed label. A feature present in both GSUB and GPOS (e.g. `locl`) merges into one row listing both tables.
+- [x] **Verified on real hardware**: `fontctl features Arial Regular` against real Windows `arial.ttf` correctly listed all 29 features (c2sc, calt, ccmp, cpsp, dlig, dnom, fina, frac, init, isol, kern, liga, lnum, locl, mark, medi, mkmk, numr, onum, pnum, rclt, rlig, salt, smcp, ss01-ss03, tnum, unic) with correct table attribution (GSUB vs. GPOS) and human-readable names; `Courier New` scanned cleanly alongside it with no crash.
+- [x] Test fixtures use `FontBuilder.addOpenTypeFeatures` (compiles real FEA syntax into real GSUB/GPOS tables) rather than mocking — covers GSUB-only, GPOS-only, a feature merged across both tables, ssNN/cvNN naming, and the raw-tag fallback for an unregistered tag. 276/276 tests passing.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 270/270 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
+- [x] 276/276 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

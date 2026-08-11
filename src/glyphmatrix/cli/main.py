@@ -37,6 +37,7 @@ from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.glyph_inspector import find_glyphs, glyph_summary
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.language_coverage import check_script, script_breakdown
+from glyphmatrix.core.opentype_features import list_features
 from glyphmatrix.core.licenses import classify_license, list_license_conflicts
 from glyphmatrix.core.packages import (
     add_document,
@@ -397,6 +398,29 @@ def language(ctx: click.Context, family: str, style: str, script_query: str | No
     click.echo(f"{family} {style}: {len(breakdown)} scripts")
     for row in breakdown:
         click.echo(f"  {row['name']:<20} ({row['script']})  {row['glyph_count']} glyphs")
+
+
+@fontctl.command()
+@click.argument("family")
+@click.argument("style")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def features(ctx: click.Context, family: str, style: str, as_json: bool) -> None:
+    """OpenType layout features (ligatures, small caps, stylistic sets...)
+    read straight from the file's GSUB/GPOS tables — most fonts have none."""
+    conn = _connect(ctx)
+    font_file = _resolve_font_file_or_raise(conn, family, style)
+
+    result = list_features(font_file["path"])
+    if as_json:
+        click.echo(json.dumps(result))
+        return
+    if not result:
+        click.echo(f"{family} {style}: no OpenType layout features (no GSUB/GPOS)")
+        return
+    click.echo(f"{family} {style}: {len(result)} features")
+    for row in result:
+        click.echo(f"  {row['tag']:<6} {row['name']:<35} ({'/'.join(row['tables'])})")
 
 
 @fontctl.command()
