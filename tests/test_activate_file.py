@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform
 from datetime import datetime, timedelta, timezone
 
 from glyphmatrix.core.activation_service import activate_family, activate_file, deactivate_file
@@ -75,8 +76,8 @@ def test_activate_file_refuses_disabled_file(tmp_path):
     provider = FakeActivationProvider()
     conn.execute(
         "INSERT INTO activations (font_file_id, platform, state, deactivated_at) "
-        "SELECT id, 'linux', 'disabled', datetime('now') FROM font_files WHERE path = ?",
-        (path,),
+        "SELECT id, ?, 'disabled', datetime('now') FROM font_files WHERE path = ?",
+        (platform.system().lower(), path),
     )
     conn.commit()
 
