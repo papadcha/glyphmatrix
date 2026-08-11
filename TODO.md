@@ -10,10 +10,6 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 - [ ] Visual/image-to-font matcher — deprioritized (needs a large reference dataset)
 - [ ] Cloud/team sync
 
-## V1.5 — Activation Manager follow-ups
-V1.5 itself (4-state model, activation sets, temporary activation, startup restore, conflict
-handling) is done as of 2026-08-11 — see DONE.md. What's left is infra/polish around it:
-
 ## GUI
 - [ ] Framework decision (Tauri vs Electron) — explicitly deferred until V1.5+, not decided
 - [ ] "Font Canvas / Library view" concept noted in docs/proposal.md, not started
