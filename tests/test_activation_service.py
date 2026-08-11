@@ -85,3 +85,32 @@ def test_deactivate_family_updates_state_to_installed(tmp_path):
     assert len(result.processed) == 1
     states = conn.execute("SELECT state FROM activations").fetchall()
     assert [s["state"] for s in states] == ["installed"]
+
+
+def test_activate_family_is_idempotent_against_the_provider(tmp_path):
+    """Regression guard: Windows' AddFontResourceEx is reference-counted, so
+    calling provider.activate() twice for an already-active file would need
+    two matching deactivate() calls to fully undo. The service must skip the
+    provider call (not just the DB write) when already active per our records."""
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+
+    activate_family(conn, "Arial", provider=provider)
+    result = activate_family(conn, "Arial", provider=provider)
+
+    assert len(provider.activated) == 1  # provider.activate() called only once
+    assert len(result.processed) == 1  # still reported as processed/active
+
+
+def test_deactivate_family_is_idempotent_against_the_provider(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+
+    result = deactivate_family(conn, "Arial", provider=provider)  # never activated
+
+    assert provider.deactivated == []  # nothing to undo, provider not called
+    assert len(result.processed) == 1

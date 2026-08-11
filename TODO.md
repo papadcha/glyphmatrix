@@ -8,8 +8,7 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 - [ ] Temporary activation
 - [ ] Startup state restore
 - [ ] Conflict handling
-- [ ] Windows activation (`platforms/windows.py` — currently a stub with a clear NotImplementedError message)
-- [ ] Linux activation (`platforms/linux.py` — same)
+- [ ] Linux activation (`platforms/linux.py` — still a stub with a clear NotImplementedError message; fontconfig-based, `~/.local/share/fonts` + `fc-cache`, per the proposal's own sketch)
 
 ## V2 — Intelligence
 - [ ] Smart collections (query language over tags/metadata — `collections.is_smart`/`smart_query` columns already exist, unused)

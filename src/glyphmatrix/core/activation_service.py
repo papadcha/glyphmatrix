@@ -78,6 +78,14 @@ def _mark_installed(conn: sqlite3.Connection, font_file_id: int, platform_name: 
         )
 
 
+def _current_state(conn: sqlite3.Connection, font_file_id: int, platform_name: str) -> str | None:
+    row = conn.execute(
+        "SELECT state FROM activations WHERE font_file_id = ? AND platform = ?",
+        (font_file_id, platform_name),
+    ).fetchone()
+    return row["state"] if row is not None else None
+
+
 def activate_family(
     conn: sqlite3.Connection, family_name: str, provider: ActivationProvider | None = None
 ) -> ActivationResult:
@@ -87,6 +95,14 @@ def activate_family(
     result = ActivationResult(family=family_name)
 
     for row in _family_file_rows(conn, family_name):
+        # Skip the OS call if our own records already say active — not just
+        # an optimization: Windows' AddFontResourceEx is reference-counted,
+        # so calling it twice for the same file requires two matching
+        # RemoveFontResourceEx calls to fully undo. The DB is the one
+        # cross-invocation source of truth for "did we already do this."
+        if _current_state(conn, row["id"], platform_name) == "active":
+            result.processed.append(row["path"])
+            continue
         try:
             provider.activate(row["path"])
             _mark_active(conn, row["id"], platform_name, now)
@@ -107,6 +123,9 @@ def deactivate_family(
     result = ActivationResult(family=family_name)
 
     for row in _family_file_rows(conn, family_name):
+        if _current_state(conn, row["id"], platform_name) != "active":
+            result.processed.append(row["path"])  # nothing to undo
+            continue
         try:
             provider.deactivate(row["path"])
             _mark_installed(conn, row["id"], platform_name, now)

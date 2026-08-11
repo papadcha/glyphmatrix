@@ -488,8 +488,11 @@ Manager, αλλά ο Font Manager δεν χρειάζεται ποτέ το AiMu
 
 1. **Πλατφόρμα εκκίνησης** — **κλειδώθηκε: macOS-first**. Σε προηγούμενα
    feedback rounds (DeepSeek/ChatGPT/Gemini) η πρόταση ήταν πάντα macOS ή
-   Linux· επιβεβαιώθηκε macOS. `platforms/macos.py` είναι η πρώτη πραγματική
-   `ActivationProvider` υλοποίηση· Windows/Linux μένουν stubs.
+   Linux· επιβεβαιώθηκε macOS. `platforms/macos.py` ήταν η πρώτη πραγματική
+   `ActivationProvider` υλοποίηση (symlink σε `~/Library/Fonts`)· ακολούθησε
+   `platforms/windows.py` (2026-08-11, `AddFontResourceEx`/`RemoveFontResourceEx`
+   μέσω ctypes, verified σε πραγματικό hardware)· `platforms/linux.py`
+   παραμένει stub.
 2. Desktop framework για το GUI, όταν φτάσουμε εκεί (Tauri vs Electron) — **όχι
    τώρα**, μετά το V1.5.
 3. **Κλειδώθηκε: standalone.** Ξεχωριστό εργαλείο/repo, όχι module μέσα στο
