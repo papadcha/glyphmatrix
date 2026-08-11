@@ -98,14 +98,14 @@ def test_outline_hash_differs_when_glyph_shape_changes(tmp_path):
 
 
 def test_parse_font_file_falls_back_for_unsupported_format(tmp_path):
-    font_path = tmp_path / "OldFont.bdf"
-    font_path.write_bytes(b"STARTFONT 2.1\nFONT -misc-fixed\n")
+    font_path = tmp_path / "OldFont.fon"
+    font_path.write_bytes(b"\x00\x00\xff\xff" * 16)
 
     parsed = parse_font_file(font_path)
 
     assert parsed.family_name == "OldFont"
     assert parsed.style is None
-    assert parsed.format == "bdf"
+    assert parsed.format == "fon"
     assert parsed.glyph_count == 0
     assert parsed.glyphs == []
     assert parsed.metadata_complete is False

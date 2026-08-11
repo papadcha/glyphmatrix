@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -79,6 +80,8 @@ class ParsedFont:
 # and basic visibility work — but no family/style/glyph metadata.
 _SFNT_FORMATS = {"ttf", "otf", "ttc", "woff", "woff2"}
 _T1_FORMATS = {"pfb", "pfa"}
+_BDF_FORMATS = {"bdf"}
+_PCF_FORMATS = {"pcf"}
 
 _T1_WEIGHT_NUMERIC: dict[str, int] = {
     "thin": 100, "hairline": 100,
@@ -94,6 +97,212 @@ _T1_WEIGHT_NUMERIC: dict[str, int] = {
 
 
 _T1_REGULAR_WEIGHTS = {"book", "regular", "roman", "normal"}
+
+# X11 XLFD "Medium" means the regular/normal weight (not CSS medium = 500).
+_BDF_REGULAR_WEIGHTS = _T1_REGULAR_WEIGHTS | {"medium"}
+
+_PCF_MAGIC = 0x70636601
+_PCF_PROPERTIES_TYPE = 1
+_PCF_METRICS_TYPE = 4
+_PCF_BYTE_MASK = 1 << 2       # bit 2 in the format word: 0=LE, 1=BE
+_PCF_COMPRESSED_METRICS = 0x100
+
+
+def _bdf_style(weight_str: str, slant: str) -> str:
+    ws_lower = weight_str.lower()
+    style = "Regular" if ws_lower in _BDF_REGULAR_WEIGHTS else (weight_str.title() or "Regular")
+    if slant.upper() in ("I", "O", "RI", "RO"):
+        style = (style.replace("Regular", "").strip() + " Italic").strip()
+    return style or "Regular"
+
+
+def _bdf_unicode_charset(registry: str, encoding: str) -> bool:
+    """True if ENCODING values in this charset are valid Unicode codepoints."""
+    r = registry.lower().replace("-", "")
+    return r in ("iso10646", "unicode") or (r in ("iso8859",) and encoding.strip() == "1")
+
+
+def _parse_bdf(path: Path, content_hash: str) -> ParsedFont:
+    text = path.read_text(encoding="latin-1", errors="replace")
+    lines = text.splitlines()
+
+    props: dict[str, str] = {}
+    in_props = False
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("STARTPROPERTIES"):
+            in_props = True
+        elif line == "ENDPROPERTIES":
+            in_props = False
+        elif in_props:
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                props[parts[0]] = parts[1].strip().strip('"')
+        elif line.startswith("CHARS "):
+            i += 1
+            break
+        i += 1
+
+    family_name = props.get("FAMILY_NAME") or path.stem
+    foundry = props.get("FOUNDRY")
+    weight_str = props.get("WEIGHT_NAME") or ""
+    slant = props.get("SLANT") or "R"
+    registry = props.get("CHARSET_REGISTRY") or ""
+    enc_val = props.get("CHARSET_ENCODING") or ""
+    version = props.get("FONT_VERSION") or props.get("FONT_NAME")
+    license_text = props.get("COPYRIGHT")
+    weight_num = _T1_WEIGHT_NUMERIC.get(weight_str.lower())
+    style = _bdf_style(weight_str, slant)
+    use_cp = _bdf_unicode_charset(registry, enc_val)
+
+    glyphs: list[ParsedGlyph] = []
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("STARTCHAR "):
+            glyph_name = line[len("STARTCHAR "):]
+            encoding: int | None = None
+            dwidth: int | None = None
+            bitmap_lines: list[str] = []
+            in_bitmap = False
+            i += 1
+            while i < len(lines):
+                gl = lines[i].strip()
+                if gl == "ENDCHAR":
+                    i += 1
+                    break
+                elif gl.startswith("ENCODING "):
+                    encoding = int(gl.split()[1])
+                elif gl.startswith("DWIDTH "):
+                    dwidth = int(gl.split()[1])
+                elif gl == "BITMAP":
+                    in_bitmap = True
+                elif in_bitmap:
+                    bitmap_lines.append(gl)
+                i += 1
+
+            bitmap_bytes = bytes.fromhex("".join(bitmap_lines)) if bitmap_lines else b""
+            outline_hash = hashlib.sha256(bitmap_bytes).hexdigest()
+            codepoint = encoding if (use_cp and encoding is not None and encoding >= 0) else None
+            glyphs.append(
+                ParsedGlyph(
+                    glyph_name=glyph_name,
+                    unicode_codepoint=codepoint,
+                    contour_count=0,
+                    advance_width=dwidth,
+                    outline_hash=outline_hash,
+                )
+            )
+        else:
+            i += 1
+
+    return ParsedFont(
+        family_name=family_name,
+        foundry=foundry,
+        style=style,
+        weight=weight_num,
+        width=None,
+        is_variable=False,
+        axes=None,
+        path=path,
+        filename=path.name,
+        format="bdf",
+        content_hash=content_hash,
+        version=version,
+        license=license_text,
+        glyph_count=len(glyphs),
+        glyphs=glyphs,
+        metadata_complete=True,
+    )
+
+
+def _pcf_read_props(data: bytes, toffset: int) -> dict[str, str | int]:
+    """Parse the PROPERTIES table from a PCF file, returning a dict of property name→value."""
+    fmt_word = struct.unpack_from("<I", data, toffset)[0]
+    bo = ">" if (fmt_word & _PCF_BYTE_MASK) else "<"
+    off = toffset + 4
+    nprops = struct.unpack_from(f"{bo}I", data, off)[0]
+    off += 4
+    prop_entries: list[tuple[int, int, int]] = []
+    for _ in range(nprops):
+        name_off = struct.unpack_from(f"{bo}I", data, off)[0]; off += 4
+        is_string = data[off]; off += 1
+        value = struct.unpack_from(f"{bo}i", data, off)[0]; off += 4
+        prop_entries.append((name_off, is_string, value))
+    # Pad the props array to a 4-byte boundary
+    off += (4 - (nprops * 9) % 4) % 4
+    string_size = struct.unpack_from(f"{bo}I", data, off)[0]
+    off += 4
+    strings_start = off
+
+    def cstr(start: int) -> str:
+        end = data.index(b"\x00", start)
+        return data[start:end].decode("latin-1", errors="replace")
+
+    result: dict[str, str | int] = {}
+    for name_off, is_string, value in prop_entries:
+        name = cstr(strings_start + name_off)
+        result[name] = cstr(strings_start + value) if is_string else value
+    return result
+
+
+def _pcf_glyph_count(data: bytes, toffset: int) -> int:
+    """Return glyph count from the METRICS table."""
+    fmt_word = struct.unpack_from("<I", data, toffset)[0]
+    bo = ">" if (fmt_word & _PCF_BYTE_MASK) else "<"
+    compressed = bool(fmt_word & _PCF_COMPRESSED_METRICS)
+    off = toffset + 4
+    if compressed:
+        return struct.unpack_from(f"{bo}H", data, off)[0]
+    return struct.unpack_from(f"{bo}I", data, off)[0]
+
+
+def _parse_pcf(path: Path, content_hash: str) -> ParsedFont:
+    data = path.read_bytes()
+    magic, ntables = struct.unpack_from("<II", data, 0)
+    if magic != _PCF_MAGIC:
+        raise ValueError(f"not a PCF file: {magic:#010x}")
+
+    tables: dict[int, tuple[int, int, int]] = {}
+    for i in range(ntables):
+        ttype, tformat, tsize, toffset = struct.unpack_from("<IIII", data, 8 + i * 16)
+        tables[ttype] = (tformat, tsize, toffset)
+
+    props: dict[str, str | int] = {}
+    if _PCF_PROPERTIES_TYPE in tables:
+        props = _pcf_read_props(data, tables[_PCF_PROPERTIES_TYPE][2])
+
+    glyph_count = 0
+    if _PCF_METRICS_TYPE in tables:
+        glyph_count = _pcf_glyph_count(data, tables[_PCF_METRICS_TYPE][2])
+
+    family_name = str(props.get("FAMILY_NAME") or path.stem)
+    foundry = str(props["FOUNDRY"]) if "FOUNDRY" in props else None
+    weight_str = str(props.get("WEIGHT_NAME") or "")
+    slant = str(props.get("SLANT") or "R")
+    version = str(props["FONT_VERSION"]) if "FONT_VERSION" in props else None
+    license_text = str(props["COPYRIGHT"]) if "COPYRIGHT" in props else None
+    weight_num = _T1_WEIGHT_NUMERIC.get(weight_str.lower())
+    style = _bdf_style(weight_str, slant)
+
+    return ParsedFont(
+        family_name=family_name,
+        foundry=foundry,
+        style=style,
+        weight=weight_num,
+        width=None,
+        is_variable=False,
+        axes=None,
+        path=path,
+        filename=path.name,
+        format="pcf",
+        content_hash=content_hash,
+        version=version,
+        license=license_text,
+        glyph_count=glyph_count,
+        glyphs=[],  # BITMAPS table parsing is a separate project; count is from METRICS
+        metadata_complete=True,
+    )
 
 
 def _t1_style(family: str, fullname: str | None, weight_str: str, italic_angle: float) -> str:
@@ -250,6 +459,10 @@ def parse_font_file(path: str | Path) -> ParsedFont:
 
     if fmt in _T1_FORMATS:
         return _parse_type1(path, content_hash)
+    if fmt in _BDF_FORMATS:
+        return _parse_bdf(path, content_hash)
+    if fmt in _PCF_FORMATS:
+        return _parse_pcf(path, content_hash)
     if fmt not in _SFNT_FORMATS:
         return _parse_unsupported(path, content_hash)
 

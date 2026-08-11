@@ -14,12 +14,9 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 - [ ] "Font Canvas / Library view" concept noted in docs/proposal.md, not started
 
 ## Legacy format support — full parsing
-Type 1 (`.pfb`/`.pfa`) is now fully parsed (see DONE.md). Remaining:
-- [ ] Legacy bitmap (`.bdf`/`.pcf`/`.fon`/`.dfont`) — fontTools has no support at all for
-      these. BDF is at least a text format (could hand-roll a minimal parser for FAMILY/SIZE
-      fields); PCF is binary; `.fon`/`.dfont` are container formats (NE/PE resources,
-      Mac resource fork) needing their own readers. Realistically separate, smaller
-      projects per format.
+Type 1 (`.pfb`/`.pfa`), BDF, and PCF are now fully parsed (see DONE.md). Remaining:
+- [ ] Legacy Windows/Mac bitmap (`.fon`/`.dfont`) — container formats (NE/PE resources,
+      Mac resource fork) needing their own readers. Lowest priority.
 
 ## Deprioritized — not near-term
 - [ ] SVG preview export (vector glyph outlines via `fontTools.pens.SVGPathPen`, alongside the existing PNG raster export) — tech stack section says preview should "export PNG/SVG", but the user judged it out of scope for now on 2026-08-10: revisit much later, not soon
