@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fontTools.pens.recordingPen import RecordingPen
+from fontTools.t1Lib import T1Font
 from fontTools.ttLib import TTFont
 
 from glyphmatrix.core.panose import classify_panose
@@ -77,6 +78,118 @@ class ParsedFont:
 # content_hash works the same regardless of format, so duplicate detection
 # and basic visibility work — but no family/style/glyph metadata.
 _SFNT_FORMATS = {"ttf", "otf", "ttc", "woff", "woff2"}
+_T1_FORMATS = {"pfb", "pfa"}
+
+_T1_WEIGHT_NUMERIC: dict[str, int] = {
+    "thin": 100, "hairline": 100,
+    "extralight": 200, "extra light": 200, "ultralight": 200, "ultra light": 200,
+    "light": 300,
+    "book": 400, "regular": 400, "roman": 400, "normal": 400,
+    "medium": 500,
+    "semibold": 600, "semi bold": 600, "demibold": 600, "demi bold": 600, "demi": 600,
+    "bold": 700,
+    "extrabold": 800, "extra bold": 800,
+    "black": 900, "heavy": 900, "ultra": 900,
+}
+
+
+_T1_REGULAR_WEIGHTS = {"book", "regular", "roman", "normal"}
+
+
+def _t1_style(family: str, fullname: str | None, weight_str: str, italic_angle: float) -> str:
+    style = ""
+    if fullname:
+        style = fullname.replace(family, "").strip(" -")
+    if not style:
+        ws_lower = weight_str.lower()
+        style = "Regular" if ws_lower in _T1_REGULAR_WEIGHTS else (weight_str or "Regular")
+    if italic_angle and "italic" not in style.lower():
+        style = (style + " Italic").strip()
+    return style or "Regular"
+
+
+def _t1_advance_width(glyph) -> int | None:
+    try:
+        glyph.decompile()
+        prog = glyph.program
+        for i, tok in enumerate(prog):
+            if tok == "hsbw" and i >= 2:
+                return int(prog[i - 1])
+            if tok == "sbw" and i >= 4:
+                return int(prog[i - 2])
+    except Exception:
+        pass
+    return None
+
+
+def _parse_type1_glyphs(t1font: T1Font) -> tuple[list[ParsedGlyph], int]:
+    enc = t1font.font.get("Encoding", [])
+    reverse_enc: dict[str, int] = {}
+    if isinstance(enc, list):
+        for idx, name in enumerate(enc):
+            if name and name != ".notdef" and name not in reverse_enc:
+                reverse_enc[name] = idx
+
+    glyphs: list[ParsedGlyph] = []
+    glyph_set = t1font.getGlyphSet()
+    for glyph_name, glyph_obj in glyph_set.items():
+        try:
+            pen = RecordingPen()
+            glyph_obj.draw(pen)
+            contour_count = sum(1 for op, _ in pen.value if op == "moveTo")
+            outline_hash = hashlib.sha256(repr(pen.value).encode()).hexdigest()
+            advance = _t1_advance_width(glyph_obj)
+            codepoint = reverse_enc.get(glyph_name)
+        except Exception:
+            continue
+        glyphs.append(
+            ParsedGlyph(
+                glyph_name=glyph_name,
+                unicode_codepoint=codepoint,
+                contour_count=contour_count,
+                advance_width=advance,
+                outline_hash=outline_hash,
+            )
+        )
+    return glyphs, len(glyph_set)
+
+
+def _parse_type1(path: Path, content_hash: str) -> ParsedFont:
+    t1 = T1Font(str(path))
+    t1.parse()
+    fi = t1.font.get("FontInfo", {})
+
+    family_name = fi.get("FamilyName") or path.stem
+    full_name = fi.get("FullName")
+    weight_str = fi.get("Weight") or ""
+    italic_angle = fi.get("ItalicAngle") or 0
+    style = _t1_style(family_name, full_name, weight_str, italic_angle)
+    weight_num = _T1_WEIGHT_NUMERIC.get(weight_str.lower())
+    version = fi.get("version") or fi.get("Version")
+    if version:
+        version = version.split(";")[0].strip()
+    license_text = fi.get("Notice")
+
+    glyphs, total = _parse_type1_glyphs(t1)
+
+    return ParsedFont(
+        family_name=family_name,
+        foundry=None,
+        style=style,
+        weight=weight_num,
+        width=None,
+        is_variable=False,
+        axes=None,
+        path=path,
+        filename=path.name,
+        format=path.suffix.lower().lstrip("."),
+        content_hash=content_hash,
+        version=version,
+        license=license_text,
+        glyph_count=total,
+        glyphs=glyphs,
+        metadata_complete=True,
+    )
 
 
 def _parse_unsupported(path: Path, content_hash: str) -> ParsedFont:
@@ -135,6 +248,8 @@ def parse_font_file(path: str | Path) -> ParsedFont:
     content_hash = _hash_file(path)
     fmt = path.suffix.lower().lstrip(".")
 
+    if fmt in _T1_FORMATS:
+        return _parse_type1(path, content_hash)
     if fmt not in _SFNT_FORMATS:
         return _parse_unsupported(path, content_hash)
 

@@ -95,7 +95,7 @@ def test_ingest_directory_no_panose_tag_when_unset(tmp_path):
 
 
 def test_ingest_directory_tracks_unsupported_formats_and_flags_them(tmp_path):
-    (tmp_path / "OldFont.pfb").write_bytes(b"placeholder Type 1 bytes")
+    (tmp_path / "OldFont.bdf").write_bytes(b"STARTFONT 2.1\nFONT -misc-fixed\n")
     conn = _conn()
 
     result = ingest_directory(conn, tmp_path)
@@ -116,9 +116,9 @@ def test_ingest_directory_tracks_unsupported_formats_and_flags_them(tmp_path):
 
 
 def test_ingest_directory_duplicate_detection_works_for_unsupported_formats(tmp_path):
-    original = tmp_path / "OldFont.pfb"
+    original = tmp_path / "OldFont.bdf"
     original.write_bytes(b"identical placeholder bytes")
-    shutil.copy(original, tmp_path / "OldFont-copy.pfb")
+    shutil.copy(original, tmp_path / "OldFont-copy.bdf")
     conn = _conn()
 
     ingest_directory(conn, tmp_path)

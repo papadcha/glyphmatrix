@@ -130,9 +130,15 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] `fontctl gf info <family>` — variants, subsets, file count for a specific family.
 - [x] `fontctl gf download <family> --dest <path>` — downloads all variant files to `<path>` (created if needed), then immediately ingests them into the library. Idempotent: existing files are skipped. No new dependency — uses stdlib `urllib` only. 13 tests with mocked HTTP; 309/309 passing.
 
+## Type 1 font parsing (2026-08-11)
+- [x] `.pfb`/`.pfa` files now fully parsed via `fontTools.t1Lib.T1Font` — family name, style, weight, version, license (Notice field), and per-glyph fingerprints. The same `RecordingPen`/`outline_hash` approach used for SFNT works unchanged: `T1Font.getGlyphSet()` returns glyph objects that support `.draw(pen)`. Advance width extracted by decompiling charstrings and scanning for `hsbw`/`sbw` operators (the Type 1 stack-encoded width mechanism, which has no hmtx equivalent). Codepoints mapped from the 8-bit `Encoding` list (index = codepoint); glyphs above 255 (e.g. the Shavian block) have `unicode_codepoint = None`, which is correct.
+- [x] Weight resolved from `FontInfo.Weight` (a string like "Book", "Bold") via `_T1_WEIGHT_NUMERIC` to a numeric value (400, 700, …). "Book", "Roman", "Normal", "Regular" all normalize to style `"Regular"` so the UI stays consistent with what SFNT reports for the same weight.
+- [x] `metadata_complete = True` for all `.pfb`/`.pfa` files — they no longer raise an `unsupported_format` validation issue. Existing tests that used fake `.pfb` bytes to represent an "unsupported format" were updated to use `.bdf` instead (which remains genuinely unsupported).
+- [x] **Tested against 5 real `.pfb` files** (Lato-Regular, OpenSans-Regular, SourceCodePro-Regular, NotoSansShavian-Regular, slick) — the only way to verify Type 1 charstring decompilation correctly, since no `FontBuilder`-equivalent for Type 1 exists in fontTools. 40 new tests in `tests/test_parser_type1.py`; skipped automatically when the fixture directory is absent so CI without the fixtures still passes. 371/371 passing.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 293/293 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
+- [x] 371/371 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked; Type 1 tests skip when real `.pfb` fixtures are absent)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first
