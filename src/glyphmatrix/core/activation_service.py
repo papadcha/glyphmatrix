@@ -48,11 +48,12 @@ def get_provider() -> ActivationProvider:
 def _family_file_rows(conn: sqlite3.Connection, family_name: str) -> list[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT font_files.id, font_files.path
+        SELECT font_files.id, font_files.path, font_files.font_face_id
         FROM font_files
         JOIN font_faces ON font_faces.id = font_files.font_face_id
         JOIN families ON families.id = font_faces.family_id
         WHERE families.name = ? COLLATE NOCASE
+        ORDER BY font_files.id
         """,
         (family_name,),
     ).fetchall()
@@ -60,7 +61,8 @@ def _family_file_rows(conn: sqlite3.Connection, family_name: str) -> list[sqlite
 
 def _face_file_rows(conn: sqlite3.Connection, font_face_id: int) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT id, path FROM font_files WHERE font_face_id = ?", (font_face_id,)
+        "SELECT id, path, font_face_id FROM font_files WHERE font_face_id = ? ORDER BY id",
+        (font_face_id,),
     ).fetchall()
 
 
@@ -141,6 +143,31 @@ def _current_state(conn: sqlite3.Connection, font_file_id: int, platform_name: s
     return row["state"] if row is not None else None
 
 
+def _conflicting_active_file(
+    conn: sqlite3.Connection, font_face_id: int, font_file_id: int, platform_name: str
+) -> str | None:
+    """Path of a *different* file under the same face that's already
+    active, if any. At most one physical file can represent a given
+    family+style to the OS at a time — two simultaneously active files
+    for the same face is genuinely ambiguous (which one does an app
+    actually get?), not just untidy bookkeeping. Checked fresh against the
+    DB (not just within one call), including uncommitted writes earlier in
+    the same transaction — same-connection reads see their own
+    not-yet-committed writes, so two conflicting files in a single
+    activate_family/activate_set call are still caught in order."""
+    row = conn.execute(
+        """
+        SELECT font_files.path
+        FROM font_files
+        JOIN activations ON activations.font_file_id = font_files.id
+        WHERE font_files.font_face_id = ? AND font_files.id != ?
+          AND activations.platform = ? AND activations.state = 'active'
+        """,
+        (font_face_id, font_file_id, platform_name),
+    ).fetchone()
+    return row["path"] if row is not None else None
+
+
 def _apply_activation(
     conn: sqlite3.Connection,
     file_rows: list[sqlite3.Row],
@@ -170,6 +197,15 @@ def _apply_activation(
         if activating and current == "disabled":
             errors.append((row["path"], "font is disabled — run `fontctl enable` first"))
             continue
+        if activating and current != "active":
+            conflict = _conflicting_active_file(
+                conn, row["font_face_id"], row["id"], platform_name
+            )
+            if conflict is not None:
+                errors.append(
+                    (row["path"], f"conflicts with already-active {conflict} (same family+style)")
+                )
+                continue
         already_there = current == "active"
         if activating == already_there:
             if activating:

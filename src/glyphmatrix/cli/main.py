@@ -30,6 +30,7 @@ from glyphmatrix.core.collections import (
     remove_face_from_collection,
 )
 from glyphmatrix.core.compare import compare_font_files
+from glyphmatrix.core.conflicts import list_conflicts
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.ingest import ingest_directory
@@ -325,6 +326,30 @@ def duplicates(ctx: click.Context, as_json: bool) -> None:
         click.echo(f"{len(group['files'])} copies (hash {group['content_hash'][:12]}):")
         for f in group["files"]:
             click.echo(f"  {f['family']} {f['style'] or '-'}  {f['path']}")
+
+
+@fontctl.command()
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def conflicts(ctx: click.Context, as_json: bool) -> None:
+    """Faces (family+style) backed by 2+ files with different content —
+    activating more than one at once is refused, since only one can
+    represent that family+style to the OS at a time."""
+    conn = _connect(ctx)
+    found = list_conflicts(conn)
+
+    if as_json:
+        click.echo(json.dumps(found))
+        return
+
+    if not found:
+        click.echo("no conflicts found")
+        return
+
+    for c in found:
+        click.echo(f"{c['family']} {c['style'] or '-'} — {len(c['files'])} different files claim this:")
+        for f in c["files"]:
+            click.echo(f"  {f['path']}  v{f['version'] or '?'}  source={f['source']}")
 
 
 def _echo_activation_result(result: ActivationResult, as_json: bool, verb: str) -> None:

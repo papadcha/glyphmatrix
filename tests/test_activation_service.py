@@ -472,3 +472,83 @@ def test_restore_active_state_collects_per_file_errors(tmp_path):
     assert result.processed == []
     assert len(result.errors) == 1
     assert result.errors[0][0] == path
+
+
+def _build_conflicting_face(conn, tmp_path):
+    """Two different files (different glyph content -> different
+    content_hash) both claiming Arial Regular — genuinely ambiguous which
+    one an app would actually get if both were active at once."""
+    folder_a = tmp_path / "a"
+    folder_a.mkdir()
+    folder_b = tmp_path / "b"
+    folder_b.mkdir()
+    file_a = build_test_font(
+        folder_a / "Arial-Regular.ttf", family="Arial", style="Regular", a_glyph_size=700
+    )
+    file_b = build_test_font(
+        folder_b / "Arial-Regular.ttf", family="Arial", style="Regular", a_glyph_size=500
+    )
+    ingest_directory(conn, tmp_path)
+    return str(file_a), str(file_b)
+
+
+def test_activate_family_refuses_second_file_for_a_conflicting_face(tmp_path):
+    conn = _conn()
+    file_a, file_b = _build_conflicting_face(conn, tmp_path)
+    provider = FakeActivationProvider()
+
+    result = activate_family(conn, "Arial", provider=provider)
+
+    assert len(result.processed) == 1
+    assert len(result.errors) == 1
+    assert result.errors[0][0] in (file_a, file_b)
+    assert "conflicts with already-active" in result.errors[0][1]
+
+    active_paths = [
+        row["path"]
+        for row in conn.execute(
+            "SELECT font_files.path FROM font_files JOIN activations "
+            "ON activations.font_file_id = font_files.id WHERE activations.state = 'active'"
+        )
+    ]
+    assert len(active_paths) == 1  # only one of the two ever became active
+
+
+def test_activate_family_conflict_persists_and_stays_idempotent(tmp_path):
+    conn = _conn()
+    _build_conflicting_face(conn, tmp_path)
+    provider = FakeActivationProvider()
+    activate_family(conn, "Arial", provider=provider)  # first call: one wins, one conflicts
+
+    result = activate_family(conn, "Arial", provider=provider)  # second call: same outcome
+
+    assert len(result.errors) == 1
+    assert len(provider.activated) == 1  # the winner was never re-touched on the OS
+
+
+def test_conflict_winner_is_deterministic_across_deactivate_reactivate(tmp_path):
+    """activate_family/activate_set have no way to activate just one
+    specific file under a conflicting face — they always process every
+    file for the family/set together, in a fixed (id) order. So the same
+    file wins every time until the loser's row is dealt with some other
+    way (e.g. removed from the library, or a future per-file activation
+    command); deactivating and reactivating the whole family just repeats
+    the same outcome. That determinism is itself worth pinning down."""
+    conn = _conn()
+    file_a, file_b = _build_conflicting_face(conn, tmp_path)
+    provider = FakeActivationProvider()
+    activate_family(conn, "Arial", provider=provider)
+    first_winner = conn.execute(
+        "SELECT font_files.path FROM font_files JOIN activations "
+        "ON activations.font_file_id = font_files.id WHERE activations.state = 'active'"
+    ).fetchone()["path"]
+
+    deactivate_family(conn, "Arial", provider=provider)
+    activate_family(conn, "Arial", provider=provider)
+
+    second_winner = conn.execute(
+        "SELECT font_files.path FROM font_files JOIN activations "
+        "ON activations.font_file_id = font_files.id WHERE activations.state = 'active'"
+    ).fetchone()["path"]
+    assert second_winner == first_winner
+    assert first_winner in (file_a, file_b)

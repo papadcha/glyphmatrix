@@ -276,6 +276,54 @@ def test_fontctl_duplicates_json_output(tmp_path):
     assert len(payload[0]["files"]) == 2
 
 
+def test_fontctl_conflicts_plain_output(tmp_path):
+    folder_a = tmp_path / "a"
+    folder_a.mkdir()
+    folder_b = tmp_path / "b"
+    folder_b.mkdir()
+    build_test_font(folder_a / "Arial-Regular.ttf", family="Arial", style="Regular", a_glyph_size=700)
+    build_test_font(folder_b / "Arial-Alt.ttf", family="Arial", style="Regular", a_glyph_size=500)
+    db_path = tmp_path / "library.db"
+    runner = CliRunner()
+    runner.invoke(fontctl, ["--db", str(db_path), "scan", str(tmp_path)])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "conflicts"])
+
+    assert result.exit_code == 0, result.output
+    assert "Arial Regular" in result.output
+    assert "2 different files" in result.output
+
+
+def test_fontctl_conflicts_none_found(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)  # Arial Regular + Bold, no conflicts
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "conflicts"])
+
+    assert result.exit_code == 0, result.output
+    assert "no conflicts found" in result.output
+
+
+def test_fontctl_activate_reports_conflict_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    folder_a = tmp_path / "a"
+    folder_a.mkdir()
+    folder_b = tmp_path / "b"
+    folder_b.mkdir()
+    build_test_font(folder_a / "Arial-Regular.ttf", family="Arial", style="Regular", a_glyph_size=700)
+    build_test_font(folder_b / "Arial-Alt.ttf", family="Arial", style="Regular", a_glyph_size=500)
+    db_path = tmp_path / "library.db"
+    runner = CliRunner()
+    runner.invoke(fontctl, ["--db", str(db_path), "scan", str(tmp_path)])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "activate", "Arial"])
+
+    assert result.exit_code == 0, result.output
+    assert "activated 1 file(s) for Arial" in result.output
+    assert "conflicts with already-active" in result.output
+
+
 def test_fontctl_activate_plain_output(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
