@@ -113,6 +113,9 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] **Verified on real hardware**: `fontctl pair Arial Regular` against a real mixed set (Arial, Times New Roman, Comic Sans MS, Georgia, all Windows system fonts) correctly ranked Times New Roman Bold (biggest weight contrast, 700 vs 400) above Comic Sans MS and Georgia (both weight 400, tied); `fontctl pair "Times New Roman" Regular` correctly suggested only Arial Bold; `fontctl pair "Comic Sans MS" Regular` correctly suggested Arial (script↔sans), not Times/Georgia (script↔serif isn't a rule this implements).
 - [x] 293/293 tests passing. **All V2 Intelligence items now done**: smart collections, license metadata, glyph inspector, language coverage, OpenType features, PANOSE, font pairing.
 
+## PDF Catalog Export (2026-08-11)
+- [x] `fontctl catalog <output.pdf> [--text TEXT] [--family FAMILY...]` — exports a multi-page PDF specimen catalog via Pillow's built-in PDF output (no new dependency). One page per family: gray header bar with family name + foundry, metadata line (face count, license categories), per-face style label + preview text in the actual font at 28pt, and a waterfall (14/20/28/40pt) of the first parseable face. Handles unparseable files (Type 1, bitmap) gracefully — those faces show metadata only, no preview. `--family` can be repeated to export a subset in a specific order. 7 tests; 316/316 passing.
+
 ## Google Fonts Integration (2026-08-11)
 - [x] `fontctl gf key <API_KEY>` — stores key in `~/.glyphmatrix/config.json`. Required for all `gf` subcommands; fails clearly if not set.
 - [x] `fontctl gf list [--category] [--subset] [--sort alpha|popularity|date|trending|style]` — full Google Fonts catalog from the official API, with client-side category/subset filtering.

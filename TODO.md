@@ -3,7 +3,6 @@
 Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled — pick items up in whatever order makes sense when picking work back up. Only open items live here — once something is done, it moves to DONE.md and gets removed from this file rather than staying checked off.
 
 ## V3 — Ecosystem
-- [ ] PDF catalog export
 - [ ] Auto-activation per document/project
 
 ## V4 — experimental / maybe never

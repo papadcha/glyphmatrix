@@ -21,6 +21,7 @@ from glyphmatrix.core.activation_service import (
     restore_active_state,
 )
 from glyphmatrix.core.backup import backup_database, restore_database
+from glyphmatrix.core.catalog import export_catalog
 from glyphmatrix.core.gf_config import get_api_key, set_api_key
 from glyphmatrix.core.google_fonts import download_family, get_family, search_catalog, get_catalog
 from glyphmatrix.core.collections import (
@@ -1138,6 +1139,38 @@ def package_doc_remove(ctx: click.Context, package_name: str, path: str) -> None
         click.echo(f"removed document from '{package_name}': {path}")
     else:
         click.echo(f"'{package_name}' had no document at {path}")
+
+
+@fontctl.command()
+@click.argument("output", metavar="OUTPUT.pdf", type=click.Path())
+@click.option("--text", default=None, help="Preview text (default: pangram)")
+@click.option("--family", "families", multiple=True, metavar="FAMILY",
+              help="Include only these families (repeat for multiple). Default: all.")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def catalog(
+    ctx: click.Context,
+    output: str,
+    text: str | None,
+    families: tuple[str, ...],
+    as_json: bool,
+) -> None:
+    """Export a PDF specimen catalog — one page per font family."""
+    conn = _connect(ctx)
+    try:
+        out = export_catalog(
+            conn,
+            output,
+            preview_text=text or DEFAULT_TEXT,
+            families=list(families) or None,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+
+    if as_json:
+        click.echo(json.dumps({"output": str(out)}))
+    else:
+        click.echo(f"wrote {out}")
 
 
 @fontctl.command()
