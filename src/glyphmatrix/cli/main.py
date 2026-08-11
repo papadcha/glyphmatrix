@@ -11,6 +11,7 @@ from glyphmatrix.core.activation_service import (
     ActivationResult,
     activate_family,
     activate_set,
+    deactivate_expired,
     deactivate_family,
     deactivate_set,
     disable_family,
@@ -148,10 +149,11 @@ def info(ctx: click.Context, family: str, as_json: bool) -> None:
         variable = " variable" if face["is_variable"] else ""
         click.echo(f"  {style}  weight={weight} width={width}{variable}")
         for f in face["files"]:
+            expiry = f" (expires {f['expires_at']})" if f["expires_at"] else ""
             click.echo(
                 f"    {f['path']}  {f['format']}  v{f['version'] or '?'}  "
                 f"glyphs={f['glyph_count']}  source={f['source']}  hash={f['content_hash'][:12]}  "
-                f"[{f['activation_state']}]"
+                f"[{f['activation_state']}]{expiry}"
             )
 
 
@@ -346,14 +348,20 @@ def _echo_activation_result(result: ActivationResult, as_json: bool, verb: str) 
 
 @fontctl.command()
 @click.argument("family")
+@click.option("--for", "duration", default=None, metavar="DURATION",
+              help="Auto-expire after this long, e.g. 30m/2h/1d. Needs "
+                   "`fontctl deactivate-expired` run periodically to take effect.")
 @click.option("--json", "as_json", is_flag=True)
 @click.pass_context
-def activate(ctx: click.Context, family: str, as_json: bool) -> None:
+def activate(ctx: click.Context, family: str, duration: str | None, as_json: bool) -> None:
     conn = _connect(ctx)
     if get_family_detail(conn, family) is None:
         raise click.ClickException(f"no such family: {family}")
 
-    result = activate_family(conn, family)
+    try:
+        result = activate_family(conn, family, duration=duration)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
     _echo_activation_result(result, as_json, verb="activated")
 
 
@@ -370,6 +378,18 @@ def deactivate(ctx: click.Context, family: str, as_json: bool) -> None:
     _echo_activation_result(result, as_json, verb="deactivated")
 
 
+@fontctl.command(name="deactivate-expired")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def deactivate_expired_cmd(ctx: click.Context, as_json: bool) -> None:
+    """Deactivate every temporarily-activated font whose --for duration
+    has passed. Not automatic — run this yourself, or via a scheduled
+    task/cron, since the tool has no background process of its own."""
+    conn = _connect(ctx)
+    result = deactivate_expired(conn)
+    _echo_activation_result(result, as_json, verb="deactivated")
+
+
 @fontctl.group(name="set")
 def activation_set() -> None:
     """Activate/deactivate a whole collection at once — an "activation
@@ -379,11 +399,16 @@ def activation_set() -> None:
 
 @activation_set.command(name="activate")
 @click.argument("name")
+@click.option("--for", "duration", default=None, metavar="DURATION",
+              help="Auto-expire after this long, e.g. 30m/2h/1d.")
 @click.option("--json", "as_json", is_flag=True)
 @click.pass_context
-def set_activate(ctx: click.Context, name: str, as_json: bool) -> None:
+def set_activate(ctx: click.Context, name: str, duration: str | None, as_json: bool) -> None:
     conn = _connect(ctx)
-    result = activate_set(conn, name)
+    try:
+        result = activate_set(conn, name, duration=duration)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
     if result is None:
         raise click.ClickException(f"no such set: {name}")
     _echo_activation_result(result, as_json, verb="activated")

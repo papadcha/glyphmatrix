@@ -1,9 +1,11 @@
 import json
 import shutil
+from datetime import datetime, timedelta, timezone
 
 from click.testing import CliRunner
 
 from glyphmatrix.cli.main import fontctl
+from glyphmatrix.core.database import connect
 
 from .fakes import FakeActivationProvider
 from .fontbuilder import build_test_font
@@ -323,6 +325,52 @@ def test_fontctl_deactivate_plain_output(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "deactivated 2 file(s) for Arial" in result.output
+
+
+def test_fontctl_activate_with_duration_shows_expiry_in_info(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+
+    activate_result = runner.invoke(
+        fontctl, ["--db", str(db_path), "activate", "--for", "30m", "Arial"]
+    )
+    assert activate_result.exit_code == 0, activate_result.output
+
+    info_result = runner.invoke(fontctl, ["--db", str(db_path), "info", "Arial"])
+    assert "expires" in info_result.output
+
+
+def test_fontctl_activate_invalid_duration_errors(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "activate", "--for", "nonsense", "Arial"])
+
+    assert result.exit_code != 0
+    assert "invalid duration" in result.output
+
+
+def test_fontctl_deactivate_expired(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "activate", "--for", "30m", "Arial"])
+
+    conn = connect(db_path)
+    past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    conn.execute("UPDATE activations SET expires_at = ?", (past,))
+    conn.commit()
+    conn.close()
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "deactivate-expired"])
+
+    assert result.exit_code == 0, result.output
+    assert "deactivated 2 file(s) for expired" in result.output
 
 
 def test_fontctl_disable_then_activate_is_refused(tmp_path, monkeypatch):

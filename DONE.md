@@ -49,9 +49,16 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] `fontctl info` now shows each file's activation state (`[available]`/`[installed]`/`[active]`/`[disabled]`) — a real gap: after building three activation providers and activation sets, `info`/`list` still showed nothing about activation status until now. `query.get_family_detail` gained an optional `platform_name` param (defaults to the current OS) and joins against `activations`.
 - [x] **Verified on real hardware**: full lifecycle on a real font — available → active → disabled (which deactivated it on the OS first) → activate attempt correctly refused → enable → active again.
 
+## Temporary Activation (2026-08-11)
+- [x] `fontctl activate <family> --for 30m/2h/1d` — new `activations.expires_at` column (schema change; existing `library.db` files need delete + rescan, same caveat as the earlier schema review). `fontctl set activate --for` too, since it shares the same underlying code path.
+- [x] `fontctl deactivate-expired` — deactivates every active font whose expiry has passed. Deliberately **not** a background daemon: the tool has no always-running process (consistent with its CLI-first design), so this is a one-shot check meant to be run by the user or a scheduled task/cron. Flagged in TODO.md that a documented per-OS scheduling recipe would help.
+- [x] Re-running `activate --for` on an already-active font now refreshes/extends its expiry (or clears it, with plain `activate`) without re-touching the OS — the existing reference-count-safe idempotency skip still applies to the provider call, but the DB write for `expires_at` always happens.
+- [x] `fontctl info` shows the expiry time alongside activation state when set.
+- [x] **Verified on real hardware**: activated a real font with `--for 30m`, confirmed `deactivate-expired` correctly leaves it alone before expiry and deactivates it once the stored expiry is moved into the past.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 175/175 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
+- [x] 192/192 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

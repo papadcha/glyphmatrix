@@ -55,7 +55,8 @@ def get_family_detail(
             """
             SELECT font_files.path, font_files.filename, font_files.format,
                    font_files.content_hash, font_files.source, font_files.version,
-                   font_files.license, font_files.glyph_count, activations.state AS activation_state
+                   font_files.license, font_files.glyph_count, activations.state AS activation_state,
+                   activations.expires_at
             FROM font_files
             LEFT JOIN activations
                 ON activations.font_file_id = font_files.id AND activations.platform = ?

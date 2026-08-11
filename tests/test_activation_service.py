@@ -1,10 +1,16 @@
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
 from glyphmatrix.core.activation_service import (
     activate_family,
     activate_set,
+    deactivate_expired,
     deactivate_family,
     deactivate_set,
     disable_family,
     enable_family,
+    parse_duration,
 )
 from glyphmatrix.core.collections import add_face_to_collection, create_collection
 from glyphmatrix.core.database import connect, init_schema
@@ -280,3 +286,112 @@ def test_enable_family_is_noop_when_not_disabled(tmp_path):
     assert len(result.processed) == 1
     row = conn.execute("SELECT state FROM activations").fetchone()
     assert row is None  # never touched, since it was never disabled
+
+
+def test_parse_duration_valid_formats():
+    assert parse_duration("30m") == timedelta(minutes=30)
+    assert parse_duration("2h") == timedelta(hours=2)
+    assert parse_duration("1d") == timedelta(days=1)
+    assert parse_duration("90s") == timedelta(seconds=90)
+    assert parse_duration(" 2H ") == timedelta(hours=2)  # whitespace/case tolerant
+
+
+@pytest.mark.parametrize("bad", ["", "30", "m", "30 m", "1.5h", "-5m", "30x"])
+def test_parse_duration_rejects_invalid_formats(bad):
+    with pytest.raises(ValueError):
+        parse_duration(bad)
+
+
+def test_activate_family_with_duration_sets_expiry(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    before = datetime.now(timezone.utc)
+
+    activate_family(conn, "Arial", provider=FakeActivationProvider(), duration="30m")
+
+    row = conn.execute("SELECT expires_at FROM activations").fetchone()
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    assert before + timedelta(minutes=29) < expires_at < before + timedelta(minutes=31)
+
+
+def test_activate_family_without_duration_leaves_expiry_null(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+
+    activate_family(conn, "Arial", provider=FakeActivationProvider())
+
+    row = conn.execute("SELECT expires_at FROM activations").fetchone()
+    assert row["expires_at"] is None
+
+
+def test_activate_family_invalid_duration_raises(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+
+    with pytest.raises(ValueError):
+        activate_family(conn, "Arial", provider=FakeActivationProvider(), duration="not-a-duration")
+
+
+def test_reactivating_an_active_font_refreshes_expiry_without_reprovider_call(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+    activate_family(conn, "Arial", provider=provider, duration="30m")
+
+    activate_family(conn, "Arial", provider=provider, duration="2h")
+
+    assert len(provider.activated) == 1  # OS not re-touched, reference-count-safe
+    row = conn.execute("SELECT expires_at FROM activations").fetchone()
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    assert expires_at > datetime.now(timezone.utc) + timedelta(minutes=90)
+
+
+def test_deactivate_expired_deactivates_only_past_expiry(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    build_test_font(tmp_path / "Verdana-Regular.ttf", family="Verdana", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+    activate_family(conn, "Arial", provider=provider, duration="30m")
+    activate_family(conn, "Verdana", provider=provider, duration="30m")
+
+    past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    conn.execute(
+        "UPDATE activations SET expires_at = ? WHERE font_file_id = "
+        "(SELECT id FROM font_files WHERE path LIKE '%Arial%')",
+        (past,),
+    )
+    conn.commit()
+
+    result = deactivate_expired(conn, provider=provider)
+
+    assert len(result.processed) == 1
+    assert "Arial" in result.processed[0]
+    arial_state = conn.execute(
+        "SELECT activations.state FROM activations JOIN font_files "
+        "ON font_files.id = activations.font_file_id WHERE font_files.path LIKE '%Arial%'"
+    ).fetchone()["state"]
+    verdana_state = conn.execute(
+        "SELECT activations.state FROM activations JOIN font_files "
+        "ON font_files.id = activations.font_file_id WHERE font_files.path LIKE '%Verdana%'"
+    ).fetchone()["state"]
+    assert arial_state == "installed"
+    assert verdana_state == "active"  # not expired yet, left alone
+
+
+def test_deactivate_expired_ignores_permanent_activations(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+    activate_family(conn, "Arial", provider=provider)  # no duration => permanent
+
+    result = deactivate_expired(conn, provider=provider)
+
+    assert result.processed == []
+    state = conn.execute("SELECT state FROM activations").fetchone()["state"]
+    assert state == "active"

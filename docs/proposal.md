@@ -298,6 +298,8 @@ CREATE TABLE activations (
         DEFAULT 'installed',
     activated_at TEXT,
     deactivated_at TEXT,
+    expires_at TEXT,              -- NULL = μόνιμο· το θέτει `fontctl activate --for`,
+                                   -- το καθαρίζει `fontctl deactivate-expired`
     UNIQUE(font_file_id, platform)
 );
 

@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS activations (
         DEFAULT 'installed',
     activated_at TEXT,
     deactivated_at TEXT,
+    expires_at TEXT,              -- NULL = permanent; set by `fontctl activate --for`,
+                                   -- cleared by `fontctl deactivate-expired`
     UNIQUE(font_file_id, platform)
 );
 
