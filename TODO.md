@@ -1,12 +1,11 @@
 # TODO
 
-Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled — pick items up in whatever order makes sense when picking work back up.
+Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled — pick items up in whatever order makes sense when picking work back up. Only open items live here — once something is done, it moves to DONE.md and gets removed from this file rather than staying checked off.
 
 ## V2 — Intelligence
-- [x] Language coverage checks — done 2026-08-11 as Unicode *script* coverage (`fontctl language`), see DONE.md. Deliberately does not do true per-language checks (e.g. "Vietnamese") since that needs curated per-language character-set data beyond what Unicode script identity alone provides — flagged honestly rather than guessed.
-- [x] OpenType features — done 2026-08-11 (`fontctl features`), see DONE.md
-- [x] Font pairing suggestions — done 2026-08-11 (`fontctl pair`), see DONE.md. Explicitly scoped as a transparent rule-of-thumb (serif/sans/script contrast + weight difference), not a black-box score — every suggestion states its reason.
-- [x] Finer-grained classification via PANOSE — done 2026-08-11 (`core/panose.py`, auto-tagged at scan time), see DONE.md. Before building, checked the concern this item raised (many fonts leave PANOSE unset) against 323 real fonts in `C:\Windows\Fonts`: 319/323 (98.8%) had a non-zero PANOSE vector, the opposite of what was worried about — went ahead.
+All of V2's originally-scoped items are done as of 2026-08-11 (smart collections, license
+metadata, glyph inspector, language coverage, OpenType features, PANOSE, font pairing) — see
+DONE.md for what each one actually does and how it was verified. One open follow-up remains:
 - [ ] License classification is deliberately conservative (`core/licenses.py`, keyword matching against license text — no NLP). A real false positive was already found and fixed on 2026-08-11: "All Rights Reserved" alone was originally treated as a Commercial/Proprietary signal, but that phrase is standard copyright-ownership boilerplate that shows up in plenty of fully permissive licenses too (DejaVu Sans's Bitstream Vera license does this). If more license text patterns turn out unreliable the same way, prefer removing the signature (falling back to "Unknown") over trying to make the matching cleverer — a wrong confident answer is worse than an honest "don't know" for something with real licensing implications.
 
 ## V3 — Ecosystem
