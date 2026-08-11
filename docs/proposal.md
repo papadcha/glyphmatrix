@@ -492,7 +492,9 @@ Manager, αλλά ο Font Manager δεν χρειάζεται ποτέ το AiMu
    `ActivationProvider` υλοποίηση (symlink σε `~/Library/Fonts`)· ακολούθησε
    `platforms/windows.py` (2026-08-11, `AddFontResourceEx`/`RemoveFontResourceEx`
    μέσω ctypes, verified σε πραγματικό hardware)· `platforms/linux.py`
-   παραμένει stub.
+   (2026-08-11, symlink σε `~/.local/share/fonts` + `fc-cache`, ίδιο μοτίβο
+   με macOS) — και τα τρία `ActivationProvider` υλοποιημένα πλέον, το Linux
+   μόνο unit-tested με mocked `fc-cache`, όχι ακόμα σε πραγματικό hardware.
 2. Desktop framework για το GUI, όταν φτάσουμε εκεί (Tauri vs Electron) — **όχι
    τώρα**, μετά το V1.5.
 3. **Κλειδώθηκε: standalone.** Ξεχωριστό εργαλείο/repo, όχι module μέσα στο

@@ -8,7 +8,7 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 - [ ] Temporary activation
 - [ ] Startup state restore
 - [ ] Conflict handling
-- [ ] Linux activation (`platforms/linux.py` — still a stub with a clear NotImplementedError message; fontconfig-based, `~/.local/share/fonts` + `fc-cache`, per the proposal's own sketch)
+- [ ] Real-hardware verification of Linux activation (`platforms/linux.py` was built and unit-tested with mocked `fc-cache`/symlinks on 2026-08-11, same as macOS's original implementation, but never run against an actual Linux machine — do that before fully trusting it, the way macOS activation was confirmed on real hardware)
 
 ## V2 — Intelligence
 - [ ] Smart collections (query language over tags/metadata — `collections.is_smart`/`smart_query` columns already exist, unused)

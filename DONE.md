@@ -38,9 +38,12 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] **Verified on real hardware**, and the verification itself surfaced a good lesson: synthetic `FontBuilder` test fonts pass fontTools/Pillow parsing but are rejected by GDI's stricter loader (`AddFontResourceEx` returned 0) — had to test with genuine font files instead. Also found that `System.Drawing.Text.InstalledFontCollection` (GDI+) doesn't reliably reflect classic GDI's `AddFontResourceEx`/`RemoveFontResourceEx` state — verified instead via `EnumFontFamiliesEx` (the same GDI subsystem the provider itself uses): a non-preinstalled font (DejaVu Sans / Inconsolata) went not-found → found → not-found across activate/deactivate through the actual `fontctl` CLI, not just the raw API.
 - [x] `platforms/windows.py`'s `is_active()` raises `NotImplementedError` with an explanation — there's no GDI API to query `AddFontResourceEx` registration by path, so it's not implementable honestly; unlike macOS's symlink check, this doesn't block anything since `activation_service.py` never calls `is_active()` (it uses the DB instead).
 
+## Linux activation (2026-08-11)
+- [x] `platforms/linux.py` — `LinuxActivationProvider`, same symlink-not-copy design as macOS (`~/.local/share/fonts`, never a copy), plus an `fc-cache -f` refresh after each change since fontconfig doesn't reliably pick up new files the way macOS's Font Book does. All the same safety behavior as macOS: idempotent activate, stale-symlink replacement, refuses to touch an unmanaged real file. Fully unit-tested with `subprocess.run` mocked out — **not yet run against a real Linux machine**, unlike macOS (confirmed on hardware) and Windows (confirmed via `EnumFontFamiliesEx`). Flagged in TODO.md as needing that verification before being fully trusted.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 145/145 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`)
+- [x] 154/154 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first
