@@ -141,9 +141,14 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] PCF (`.pcf`) fully parsed: binary format (X11 portable compiled font). Reads the PROPERTIES table (struct with nameOffset/isString/value triples + string pool, with 4-byte-aligned padding after the property array) to extract the same metadata fields as BDF. Glyph count from METRICS table (compressed int16 or uncompressed int32, flagged by bit 8 of the format word). Byte order determined per-table from bit 2 of each table's format word. Per-glyph bitmap hashes are not extracted (BITMAPS table parsing would be a separate project; count is enough for dedup and visibility).
 - [x] **Verified against 4 real BDF+PCF pairs** (5th-element, Haxor, lokaltog-fixed, PICO-8 Raize): family/style/glyph-count consistent between each BDF and its compiled PCF. 63 new tests in `test_parser_bitmap.py`; skip when fixture directory absent. 434/434 passing.
 
+## Windows FON font parsing (2026-08-11)
+- [x] `.fon` (Windows NE-format raster font container) fully parsed. Walks the NE resource table to find all `RT_FONT` (type `0x8008`) entries; for each, parses the FNT structure (v2.00/v3.00): face name (`dfFace` pointer into the FNT's string pool), weight (`dfWeight` 100-900), italic flag (`dfItalic`), character range (`dfFirstChar`/`dfLastChar`), and the 60-byte copyright notice. A single `.fon` can embed multiple pixel sizes of the same typeface — metadata comes from the first FNT, glyph count from the size with the widest character range. Per-glyph bitmap hashes not extracted (would need per-character width table + `dfBitsOffset` walk — deferred). License is the longest non-empty copyright string across all embedded sizes.
+- [x] **Verified against 3 real `.fon` files**: DOSLike (3 sizes, freeware), Fixed Sans Serif (1 size), CG Mono (4 sizes, no copyright). 35 new tests in `test_parser_fon.py`. `.dfont` remains the only genuinely unsupported legacy format.
+- [x] 469/469 passing.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 434/434 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked; Type 1/BDF/PCF tests skip when real fixtures are absent)
+- [x] 469/469 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked; Type 1/BDF/PCF/FON tests skip when real fixtures are absent)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

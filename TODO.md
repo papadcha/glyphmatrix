@@ -14,9 +14,9 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 - [ ] "Font Canvas / Library view" concept noted in docs/proposal.md, not started
 
 ## Legacy format support — full parsing
-Type 1 (`.pfb`/`.pfa`), BDF, and PCF are now fully parsed (see DONE.md). Remaining:
-- [ ] Legacy Windows/Mac bitmap (`.fon`/`.dfont`) — container formats (NE/PE resources,
-      Mac resource fork) needing their own readers. Lowest priority.
+Type 1 (`.pfb`/`.pfa`), BDF, PCF, and FON are now fully parsed (see DONE.md). Remaining:
+- [ ] Mac resource-fork bitmap (`.dfont`) — Mac resource fork container format needing
+      its own reader. Lowest priority.
 
 ## Deprioritized — not near-term
 - [ ] SVG preview export (vector glyph outlines via `fontTools.pens.SVGPathPen`, alongside the existing PNG raster export) — tech stack section says preview should "export PNG/SVG", but the user judged it out of scope for now on 2026-08-10: revisit much later, not soon

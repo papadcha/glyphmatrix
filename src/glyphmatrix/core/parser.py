@@ -82,6 +82,7 @@ _SFNT_FORMATS = {"ttf", "otf", "ttc", "woff", "woff2"}
 _T1_FORMATS = {"pfb", "pfa"}
 _BDF_FORMATS = {"bdf"}
 _PCF_FORMATS = {"pcf"}
+_FON_FORMATS = {"fon"}
 
 _T1_WEIGHT_NUMERIC: dict[str, int] = {
     "thin": 100, "hairline": 100,
@@ -401,6 +402,103 @@ def _parse_type1(path: Path, content_hash: str) -> ParsedFont:
     )
 
 
+_FON_NE_MAGIC = b"NE"
+_FON_RT_FONT = 0x8008  # NE standard resource type for FONT
+
+
+def _fon_style(weight: int, italic: bool) -> str:
+    if weight >= 700:
+        base = "Bold"
+    elif weight >= 500:
+        base = "Medium"
+    elif 0 < weight < 400:
+        base = "Light"
+    else:
+        base = "Regular"
+    if italic:
+        return (base.replace("Regular", "").strip() + " Italic").strip() or "Italic"
+    return base
+
+
+def _fnt_info(data: bytes, fnt_off: int) -> dict:
+    italic = bool(data[fnt_off + 0x50])
+    weight = struct.unpack_from("<H", data, fnt_off + 0x53)[0]
+    first_char = data[fnt_off + 0x5F]
+    last_char = data[fnt_off + 0x60]
+    copyright = (
+        data[fnt_off + 6 : fnt_off + 66].split(b"\x00")[0]
+        .decode("latin-1", errors="replace")
+        .strip()
+    )
+    dfFace = struct.unpack_from("<I", data, fnt_off + 0x69)[0]
+    face_end = data.index(b"\x00", fnt_off + dfFace)
+    face = data[fnt_off + dfFace : face_end].decode("latin-1", errors="replace")
+    return {
+        "face": face,
+        "weight": weight,
+        "italic": italic,
+        "glyph_count": max(0, last_char - first_char + 1),
+        "copyright": copyright or None,
+    }
+
+
+def _parse_fon(path: Path, content_hash: str) -> ParsedFont:
+    data = path.read_bytes()
+    if data[:2] != b"MZ":
+        raise ValueError("not an MZ executable")
+    ne_off = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[ne_off : ne_off + 2] != _FON_NE_MAGIC:
+        raise ValueError("not an NE executable — PE FON not supported")
+
+    res_tab_rel = struct.unpack_from("<H", data, ne_off + 0x24)[0]
+    off = ne_off + res_tab_rel
+    align_shift = struct.unpack_from("<H", data, off)[0]
+    off += 2
+
+    fnt_offsets: list[int] = []
+    while True:
+        rtype = struct.unpack_from("<H", data, off)[0]
+        if rtype == 0:
+            break
+        rcount = struct.unpack_from("<H", data, off + 2)[0]
+        off += 8
+        for _ in range(rcount):
+            roff, rlen = struct.unpack_from("<HH", data, off)
+            off += 12
+            if rtype == _FON_RT_FONT:
+                fnt_offsets.append(roff << align_shift)
+
+    if not fnt_offsets:
+        raise ValueError("no FONT resources in FON file")
+
+    infos = [_fnt_info(data, fo) for fo in fnt_offsets]
+    first = infos[0]
+    # Use the longest non-empty copyright string across all embedded sizes.
+    license_text = max(
+        (i["copyright"] for i in infos if i["copyright"]), key=len, default=None
+    )
+    glyph_count = max(i["glyph_count"] for i in infos)
+
+    return ParsedFont(
+        family_name=first["face"] or path.stem,
+        foundry=None,
+        style=_fon_style(first["weight"], first["italic"]),
+        weight=first["weight"] or None,
+        width=None,
+        is_variable=False,
+        axes=None,
+        path=path,
+        filename=path.name,
+        format="fon",
+        content_hash=content_hash,
+        version=None,
+        license=license_text,
+        glyph_count=glyph_count,
+        glyphs=[],
+        metadata_complete=True,
+    )
+
+
 def _parse_unsupported(path: Path, content_hash: str) -> ParsedFont:
     return ParsedFont(
         family_name=path.stem,
@@ -463,6 +561,8 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         return _parse_bdf(path, content_hash)
     if fmt in _PCF_FORMATS:
         return _parse_pcf(path, content_hash)
+    if fmt in _FON_FORMATS:
+        return _parse_fon(path, content_hash)
     if fmt not in _SFNT_FORMATS:
         return _parse_unsupported(path, content_hash)
 
