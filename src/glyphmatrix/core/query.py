@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform as platform_module
 import sqlite3
 
 
@@ -29,7 +30,12 @@ def list_faces(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
-def get_family_detail(conn: sqlite3.Connection, family_name: str) -> dict | None:
+def get_family_detail(
+    conn: sqlite3.Connection, family_name: str, platform_name: str | None = None
+) -> dict | None:
+    if platform_name is None:
+        platform_name = platform_module.system().lower()
+
     family_row = conn.execute(
         "SELECT id, name, foundry FROM families WHERE name = ? COLLATE NOCASE",
         (family_name,),
@@ -46,9 +52,17 @@ def get_family_detail(conn: sqlite3.Connection, family_name: str) -> dict | None
     result_faces = []
     for face in faces:
         files = conn.execute(
-            "SELECT path, filename, format, content_hash, source, version, license, "
-            "glyph_count FROM font_files WHERE font_face_id = ? ORDER BY filename",
-            (face["id"],),
+            """
+            SELECT font_files.path, font_files.filename, font_files.format,
+                   font_files.content_hash, font_files.source, font_files.version,
+                   font_files.license, font_files.glyph_count, activations.state AS activation_state
+            FROM font_files
+            LEFT JOIN activations
+                ON activations.font_file_id = font_files.id AND activations.platform = ?
+            WHERE font_files.font_face_id = ?
+            ORDER BY font_files.filename
+            """,
+            (platform_name, face["id"]),
         ).fetchall()
         result_faces.append(
             {
@@ -56,7 +70,10 @@ def get_family_detail(conn: sqlite3.Connection, family_name: str) -> dict | None
                 "weight": face["weight"],
                 "width": face["width"],
                 "is_variable": bool(face["is_variable"]),
-                "files": [dict(f) for f in files],
+                "files": [
+                    {**dict(f), "activation_state": f["activation_state"] or "available"}
+                    for f in files
+                ],
             }
         )
 

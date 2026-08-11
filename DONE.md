@@ -44,9 +44,14 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 ## Activation Sets (2026-08-11)
 - [x] `fontctl set activate <name>` / `fontctl set deactivate <name>` — activates/deactivates every face in a collection at once. Sugar over `collections`, same pattern as Favorites: no new schema, an "activation set" is just a collection used this way (`fontctl collection create`/`add` to build it). Refactored `activation_service.py` to extract a shared `_apply_activation` helper behind both family- and set-level activation, so the reference-count-safe idempotency check (skip the provider call when the DB already says the file is in the target state) applies uniformly — previously only `activate_family`/`deactivate_family` had it. `ActivationResult.family` renamed to `.label` since the same result type now represents either a family name or a set name. **Verified on real hardware**: two real fonts (DejaVu Sans, Inconsolata) activated together and deactivated together with single commands.
 
+## 4-State Model (2026-08-11)
+- [x] `fontctl disable <family>` / `fontctl enable <family>` — the schema's `available`/`installed`/`active`/`disabled` states are now all real. `available` stays implicit (no `activations` row — matches how the code already treated untouched fonts). `disabled` has actual teeth: `disable_family` deactivates first if currently active, then marks disabled; `_apply_activation` (shared by `activate_family`/`activate_set`) refuses to activate a disabled file, reporting a clear per-file error rather than silently going through. `enable_family` clears the flag without itself re-activating anything.
+- [x] `fontctl info` now shows each file's activation state (`[available]`/`[installed]`/`[active]`/`[disabled]`) — a real gap: after building three activation providers and activation sets, `info`/`list` still showed nothing about activation status until now. `query.get_family_detail` gained an optional `platform_name` param (defaults to the current OS) and joins against `activations`.
+- [x] **Verified on real hardware**: full lifecycle on a real font — available → active → disabled (which deactivated it on the OS first) → activate attempt correctly refused → enable → active again.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 165/165 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
+- [x] 175/175 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

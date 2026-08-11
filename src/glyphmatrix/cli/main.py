@@ -13,6 +13,8 @@ from glyphmatrix.core.activation_service import (
     activate_set,
     deactivate_family,
     deactivate_set,
+    disable_family,
+    enable_family,
 )
 from glyphmatrix.core.backup import backup_database, restore_database
 from glyphmatrix.core.collections import (
@@ -148,7 +150,8 @@ def info(ctx: click.Context, family: str, as_json: bool) -> None:
         for f in face["files"]:
             click.echo(
                 f"    {f['path']}  {f['format']}  v{f['version'] or '?'}  "
-                f"glyphs={f['glyph_count']}  source={f['source']}  hash={f['content_hash'][:12]}"
+                f"glyphs={f['glyph_count']}  source={f['source']}  hash={f['content_hash'][:12]}  "
+                f"[{f['activation_state']}]"
             )
 
 
@@ -396,6 +399,35 @@ def set_deactivate(ctx: click.Context, name: str, as_json: bool) -> None:
     if result is None:
         raise click.ClickException(f"no such set: {name}")
     _echo_activation_result(result, as_json, verb="deactivated")
+
+
+@fontctl.command()
+@click.argument("family")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def disable(ctx: click.Context, family: str, as_json: bool) -> None:
+    """Block a family from being activated until `fontctl enable` — also
+    deactivates it first if currently active."""
+    conn = _connect(ctx)
+    if get_family_detail(conn, family) is None:
+        raise click.ClickException(f"no such family: {family}")
+
+    result = disable_family(conn, family)
+    _echo_activation_result(result, as_json, verb="disabled")
+
+
+@fontctl.command()
+@click.argument("family")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def enable(ctx: click.Context, family: str, as_json: bool) -> None:
+    """Clear a family's disabled flag — does not itself activate it."""
+    conn = _connect(ctx)
+    if get_family_detail(conn, family) is None:
+        raise click.ClickException(f"no such family: {family}")
+
+    result = enable_family(conn, family)
+    _echo_activation_result(result, as_json, verb="enabled")
 
 
 @fontctl.group()

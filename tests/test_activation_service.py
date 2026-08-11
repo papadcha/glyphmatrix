@@ -3,6 +3,8 @@ from glyphmatrix.core.activation_service import (
     activate_set,
     deactivate_family,
     deactivate_set,
+    disable_family,
+    enable_family,
 )
 from glyphmatrix.core.collections import add_face_to_collection, create_collection
 from glyphmatrix.core.database import connect, init_schema
@@ -207,3 +209,74 @@ def test_activate_set_is_idempotent_against_the_provider(tmp_path):
     activate_set(conn, "Body Text", provider=provider)
 
     assert len(provider.activated) == 2  # not 4 — second call was a no-op per file
+
+
+def test_disable_family_marks_state_disabled(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+
+    result = disable_family(conn, "Arial", provider=FakeActivationProvider())
+
+    assert len(result.processed) == 1
+    assert result.errors == []
+    states = conn.execute("SELECT state FROM activations").fetchall()
+    assert [s["state"] for s in states] == ["disabled"]
+
+
+def test_disable_family_deactivates_first_if_currently_active(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+    activate_family(conn, "Arial", provider=provider)
+
+    disable_family(conn, "Arial", provider=provider)
+
+    assert provider.deactivated == provider.activated  # was turned off before disabling
+    states = conn.execute("SELECT state FROM activations").fetchall()
+    assert [s["state"] for s in states] == ["disabled"]
+
+
+def test_activate_family_refuses_a_disabled_font(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+    disable_family(conn, "Arial", provider=provider)
+
+    result = activate_family(conn, "Arial", provider=provider)
+
+    assert result.processed == []
+    assert len(result.errors) == 1
+    assert "disabled" in result.errors[0][1]
+    assert provider.activated == []  # never even reached the OS call
+    states = conn.execute("SELECT state FROM activations").fetchall()
+    assert [s["state"] for s in states] == ["disabled"]  # unchanged
+
+
+def test_enable_family_clears_disabled_state(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    provider = FakeActivationProvider()
+    disable_family(conn, "Arial", provider=provider)
+
+    enable_family(conn, "Arial")
+    result = activate_family(conn, "Arial", provider=provider)
+
+    assert len(result.processed) == 1
+    assert result.errors == []
+    assert provider.activated == [str(tmp_path / "Arial-Regular.ttf")]
+
+
+def test_enable_family_is_noop_when_not_disabled(tmp_path):
+    build_test_font(tmp_path / "Arial-Regular.ttf", family="Arial", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+
+    result = enable_family(conn, "Arial")
+
+    assert len(result.processed) == 1
+    row = conn.execute("SELECT state FROM activations").fetchone()
+    assert row is None  # never touched, since it was never disabled

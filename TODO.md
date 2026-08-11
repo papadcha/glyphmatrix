@@ -3,7 +3,6 @@
 Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled — pick items up in whatever order makes sense when picking work back up.
 
 ## V1.5 — Activation Manager
-- [ ] 4-state model (`available`/`installed`/`active`/`disabled` — schema already supports this, `activations.state` CHECK constraint already lists all four; only the 2-state V0 logic is implemented)
 - [ ] Temporary activation
 - [ ] Startup state restore
 - [ ] Conflict handling

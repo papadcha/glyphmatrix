@@ -92,6 +92,24 @@ def _mark_installed(conn: sqlite3.Connection, font_file_id: int, platform_name: 
         )
 
 
+def _mark_disabled(conn: sqlite3.Connection, font_file_id: int, platform_name: str, now: str) -> None:
+    existing = conn.execute(
+        "SELECT id FROM activations WHERE font_file_id = ? AND platform = ?",
+        (font_file_id, platform_name),
+    ).fetchone()
+    if existing is None:
+        conn.execute(
+            "INSERT INTO activations (font_file_id, platform, state, deactivated_at) "
+            "VALUES (?, ?, 'disabled', ?)",
+            (font_file_id, platform_name, now),
+        )
+    else:
+        conn.execute(
+            "UPDATE activations SET state = 'disabled', deactivated_at = ? WHERE id = ?",
+            (now, existing["id"]),
+        )
+
+
 def _current_state(conn: sqlite3.Connection, font_file_id: int, platform_name: str) -> str | None:
     row = conn.execute(
         "SELECT state FROM activations WHERE font_file_id = ? AND platform = ?",
@@ -119,7 +137,11 @@ def _apply_activation(
     errors: list[tuple[str, str]] = []
 
     for row in file_rows:
-        already_there = _current_state(conn, row["id"], platform_name) == "active"
+        current = _current_state(conn, row["id"], platform_name)
+        if activating and current == "disabled":
+            errors.append((row["path"], "font is disabled — run `fontctl enable` first"))
+            continue
+        already_there = current == "active"
         if activating == already_there:
             processed.append(row["path"])
             continue
@@ -201,3 +223,46 @@ def deactivate_set(
     )
     conn.commit()
     return ActivationResult(label=set_name, processed=processed, errors=errors)
+
+
+def disable_family(
+    conn: sqlite3.Connection, family_name: str, provider: ActivationProvider | None = None
+) -> ActivationResult:
+    """Marks every file as disabled — deactivating first if currently
+    active. A disabled file is refused by activate_family/activate_set
+    until enable_family clears it; this is the 4th state's actual teeth,
+    not just a fourth label."""
+    provider = provider or get_provider()
+    platform_name = platform_module.system().lower()
+    now = datetime.now(timezone.utc).isoformat()
+    processed: list[str] = []
+    errors: list[tuple[str, str]] = []
+
+    for row in _family_file_rows(conn, family_name):
+        if _current_state(conn, row["id"], platform_name) == "active":
+            try:
+                provider.deactivate(row["path"])
+            except Exception as exc:
+                errors.append((row["path"], str(exc)))
+                continue
+        _mark_disabled(conn, row["id"], platform_name, now)
+        processed.append(row["path"])
+
+    conn.commit()
+    return ActivationResult(label=family_name, processed=processed, errors=errors)
+
+
+def enable_family(conn: sqlite3.Connection, family_name: str) -> ActivationResult:
+    """Clears the disabled flag so future activate calls can succeed
+    again — does not itself re-activate anything."""
+    platform_name = platform_module.system().lower()
+    now = datetime.now(timezone.utc).isoformat()
+    processed: list[str] = []
+
+    for row in _family_file_rows(conn, family_name):
+        if _current_state(conn, row["id"], platform_name) == "disabled":
+            _mark_installed(conn, row["id"], platform_name, now)
+        processed.append(row["path"])
+
+    conn.commit()
+    return ActivationResult(label=family_name, processed=processed, errors=[])

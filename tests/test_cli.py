@@ -99,6 +99,33 @@ def test_fontctl_info_json_output(tmp_path):
     assert len(payload["faces"]) == 2
 
 
+def test_fontctl_info_shows_available_state_by_default(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "info", "--json", "Arial"])
+
+    payload = json.loads(result.output)
+    states = {f["activation_state"] for face in payload["faces"] for f in face["files"]}
+    assert states == {"available"}
+    assert "[available]" in runner.invoke(
+        fontctl, ["--db", str(db_path), "info", "Arial"]
+    ).output
+
+
+def test_fontctl_info_shows_active_state_after_activation(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "activate", "Arial"])
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "info", "--json", "Arial"])
+
+    payload = json.loads(result.output)
+    states = {f["activation_state"] for face in payload["faces"] for f in face["files"]}
+    assert states == {"active"}
+
+
 def test_fontctl_info_unknown_family_errors(tmp_path):
     runner, db_path = _scanned_db(tmp_path)
 
@@ -296,6 +323,48 @@ def test_fontctl_deactivate_plain_output(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "deactivated 2 file(s) for Arial" in result.output
+
+
+def test_fontctl_disable_then_activate_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+
+    disable_result = runner.invoke(fontctl, ["--db", str(db_path), "disable", "Arial"])
+    assert disable_result.exit_code == 0, disable_result.output
+    assert "disabled 2 file(s) for Arial" in disable_result.output
+
+    activate_result = runner.invoke(fontctl, ["--db", str(db_path), "activate", "Arial"])
+    assert activate_result.exit_code == 0, activate_result.output
+    assert "activated 0 file(s) for Arial" in activate_result.output
+    assert "disabled" in activate_result.output
+
+
+def test_fontctl_enable_allows_activation_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+    runner.invoke(fontctl, ["--db", str(db_path), "disable", "Arial"])
+
+    enable_result = runner.invoke(fontctl, ["--db", str(db_path), "enable", "Arial"])
+    assert enable_result.exit_code == 0, enable_result.output
+
+    activate_result = runner.invoke(fontctl, ["--db", str(db_path), "activate", "Arial"])
+    assert "activated 2 file(s) for Arial" in activate_result.output
+
+
+def test_fontctl_disable_unknown_family_errors(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "glyphmatrix.core.activation_service.get_provider", lambda: FakeActivationProvider()
+    )
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "disable", "Nonexistent"])
+
+    assert result.exit_code != 0
+    assert "no such family" in result.output
 
 
 def _set_up_activation_set(runner, db_path):
