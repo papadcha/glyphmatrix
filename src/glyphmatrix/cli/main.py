@@ -34,6 +34,7 @@ from glyphmatrix.core.compare import compare_font_files
 from glyphmatrix.core.conflicts import list_conflicts
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
+from glyphmatrix.core.font_pairing import suggest_pairings
 from glyphmatrix.core.glyph_inspector import find_glyphs, glyph_summary
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.language_coverage import check_script, script_breakdown
@@ -421,6 +422,39 @@ def features(ctx: click.Context, family: str, style: str, as_json: bool) -> None
     click.echo(f"{family} {style}: {len(result)} features")
     for row in result:
         click.echo(f"  {row['tag']:<6} {row['name']:<35} ({'/'.join(row['tables'])})")
+
+
+@fontctl.command()
+@click.argument("family")
+@click.argument("style")
+@click.option("--limit", default=5, type=int, help="Max suggestions to show")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def pair(ctx: click.Context, family: str, style: str, limit: int, as_json: bool) -> None:
+    """Suggests fonts from your library that pair well with this one, using
+    the classic serif/sans/script contrast rule of thumb over the
+    sFamilyClass/PANOSE tags already applied at scan time. This is a
+    heuristic, not a fact — every suggestion states its reason so you can
+    judge it yourself."""
+    conn = _connect(ctx)
+    face_id = find_face_id(conn, family, style)
+    if face_id is None:
+        raise click.ClickException(f"no such face: {family} {style}")
+
+    result = suggest_pairings(conn, face_id, limit=limit)
+    if as_json:
+        click.echo(json.dumps(result))
+        return
+
+    if result["source_bucket"] is None:
+        click.echo(f"{family} {style}: no serif/sans/script classification tag — can't suggest a pairing")
+        return
+    if not result["suggestions"]:
+        click.echo(f"{family} {style} ({result['source_bucket']}): no contrasting fonts found in your library")
+        return
+    click.echo(f"{family} {style} ({result['source_bucket']}) pairs well with:")
+    for s in result["suggestions"]:
+        click.echo(f"  {s['family']:<24} {s['style'] or '-':<12} ({s['bucket']:<6})  {s['reason']}")
 
 
 @fontctl.command()

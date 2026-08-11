@@ -102,9 +102,16 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] **Verified on real hardware**, and it's a clean complementary result, not a duplicate: `arial.ttf` tags as `sans-serif` (from `sFamilyClass`) **and** `normal-sans` (from PANOSE, finer); `times.ttf` tags as `oldstyle-serif` **and** `cove`; `comic.ttf` tags as `script` **and** `hand-written`. Confirmed a smart collection (`tag:normal-sans`) correctly matched only Arial among the three.
 - [x] 286/286 tests passing.
 
+## Font Pairing Suggestions (2026-08-11) — completes V2 Intelligence
+- [x] `core/font_pairing.py` (`suggest_pairings`), `fontctl pair <family> <style> [--limit N]`. **The most subjective feature in the codebase, flagged to the user as such before building** (unlike script/feature coverage, which are hard facts) — user explicitly picked it up anyway. Kept it honest by making it a transparent rule-of-thumb rather than a black-box score: buckets faces into serif/sans/script from the classification tags `sFamilyClass`/PANOSE already auto-apply at scan time (no new metadata), applies the classic contrast-pairing rule (serif↔sans, script↔sans — deliberately not script↔serif, not an established rule), ranks by largest weight difference (bigger contrast = more useful for heading/body hierarchy), and every suggestion states its reason in plain text (e.g. "sans ↔ serif contrast; weight 700 vs your 400") so the user can judge the rule themselves instead of trusting a hidden score.
+- [x] Faces with no classification tag (unset `sFamilyClass`/PANOSE) get an honest "can't suggest a pairing" rather than a guess — same house style as the license-classification and language-coverage "unknown beats a confident wrong answer" precedent. `symbolic`/`ornamental`/`miscellaneous` tags are deliberately left unbucketed for the same reason — not body/heading text faces in the pairing sense.
+- [x] One suggestion per family (the best weight-contrast style of that family), excludes the source's own family (pairing a font with itself isn't a pairing).
+- [x] **Verified on real hardware**: `fontctl pair Arial Regular` against a real mixed set (Arial, Times New Roman, Comic Sans MS, Georgia, all Windows system fonts) correctly ranked Times New Roman Bold (biggest weight contrast, 700 vs 400) above Comic Sans MS and Georgia (both weight 400, tied); `fontctl pair "Times New Roman" Regular` correctly suggested only Arial Bold; `fontctl pair "Comic Sans MS" Regular` correctly suggested Arial (script↔sans), not Times/Georgia (script↔serif isn't a rule this implements).
+- [x] 293/293 tests passing. **All V2 Intelligence items now done**: smart collections, license metadata, glyph inspector, language coverage, OpenType features, PANOSE, font pairing.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 286/286 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
+- [x] 293/293 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first

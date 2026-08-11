@@ -18,6 +18,7 @@ def build_test_font(
     extra_codepoints: dict[int, str] | None = None,
     opentype_features: str | None = None,
     panose: tuple[int, ...] | None = None,
+    weight: int | None = None,
 ) -> Path:
     """Build a minimal valid TTF for parser tests: .notdef + A (square outline
     of a_glyph_size), optionally + B, mapped via cmap. extra_codepoints adds
@@ -74,6 +75,8 @@ def build_test_font(
     os2_kwargs = {"sTypoAscender": 800, "sTypoDescender": -200, "usWinAscent": 800, "usWinDescent": 200}
     if family_class is not None:
         os2_kwargs["sFamilyClass"] = family_class
+    if weight is not None:
+        os2_kwargs["usWeightClass"] = weight
     fb.setupOS2(**os2_kwargs)
     fb.setupPost()
     if panose is not None:
