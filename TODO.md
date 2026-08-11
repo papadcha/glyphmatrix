@@ -2,12 +2,6 @@
 
 Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled — pick items up in whatever order makes sense when picking work back up. Only open items live here — once something is done, it moves to DONE.md and gets removed from this file rather than staying checked off.
 
-## V2 — Intelligence
-All of V2's originally-scoped items are done as of 2026-08-11 (smart collections, license
-metadata, glyph inspector, language coverage, OpenType features, PANOSE, font pairing) — see
-DONE.md for what each one actually does and how it was verified. One open follow-up remains:
-- [ ] License classification is deliberately conservative (`core/licenses.py`, keyword matching against license text — no NLP). A real false positive was already found and fixed on 2026-08-11: "All Rights Reserved" alone was originally treated as a Commercial/Proprietary signal, but that phrase is standard copyright-ownership boilerplate that shows up in plenty of fully permissive licenses too (DejaVu Sans's Bitstream Vera license does this). If more license text patterns turn out unreliable the same way, prefer removing the signature (falling back to "Unknown") over trying to make the matching cleverer — a wrong confident answer is worse than an honest "don't know" for something with real licensing implications.
-
 ## V3 — Ecosystem
 - [ ] PDF catalog export
 - [ ] Auto-activation per document/project
