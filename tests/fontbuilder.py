@@ -15,14 +15,20 @@ def build_test_font(
     version: str | None = None,
     manufacturer: str | None = None,
     family_class: int | None = None,
+    extra_codepoints: dict[int, str] | None = None,
 ) -> Path:
     """Build a minimal valid TTF for parser tests: .notdef + A (square outline
-    of a_glyph_size), optionally + B, mapped via cmap."""
+    of a_glyph_size), optionally + B, mapped via cmap. extra_codepoints adds
+    further glyphs (e.g. {0x3B4: "delta"} for Greek) each with the same
+    square outline as B, for tests needing glyphs outside the Latin script."""
     glyph_order = [".notdef", "A"]
     cmap = {65: "A"}
     if extra_glyph:
         glyph_order.append("B")
         cmap[66] = "B"
+    for cp, name in (extra_codepoints or {}).items():
+        glyph_order.append(name)
+        cmap[cp] = name
 
     fb = FontBuilder(1000, isTTF=True)
     fb.setupGlyphOrder(glyph_order)
@@ -44,6 +50,15 @@ def build_test_font(
         pen_b.lineTo((400, 0))
         pen_b.closePath()
         glyphs["B"] = pen_b.glyph()
+
+    for name in (extra_codepoints or {}).values():
+        pen_extra = TTGlyphPen(None)
+        pen_extra.moveTo((0, 0))
+        pen_extra.lineTo((0, 300))
+        pen_extra.lineTo((300, 300))
+        pen_extra.lineTo((300, 0))
+        pen_extra.closePath()
+        glyphs[name] = pen_extra.glyph()
 
     fb.setupGlyf(glyphs)
     fb.setupHorizontalMetrics({name: (600, 0) for name in glyph_order})

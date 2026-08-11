@@ -3,7 +3,7 @@
 Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled — pick items up in whatever order makes sense when picking work back up.
 
 ## V2 — Intelligence
-- [ ] Language coverage checks
+- [x] Language coverage checks — done 2026-08-11 as Unicode *script* coverage (`fontctl language`), see DONE.md. Deliberately does not do true per-language checks (e.g. "Vietnamese") since that needs curated per-language character-set data beyond what Unicode script identity alone provides — flagged honestly rather than guessed.
 - [ ] OpenType features
 - [ ] Font pairing suggestions
 - [ ] Finer-grained classification via PANOSE (`OS/2.panose`, 10-byte vector: family type, serif style, weight, proportion, contrast, stroke variation, arm style, letterform, midline, x-height) — auto-tagging currently only uses `sFamilyClass`'s ~10 broad categories. PANOSE could distinguish e.g. Grotesque vs. Humanist vs. Geometric sans, but many fonts leave it unset/default (all-zero), so value is inconsistent across real-world fonts — worth checking against the user's actual library before investing in the mapping. **Confirmed while testing smart collections on 2026-08-11**: a real, professionally-made font (DejaVu Sans) had `sFamilyClass` at 0 (unset) — the `tag:sans-serif`-style smart query genuinely found nothing for it, not a bug, just the classification gap this item is about.

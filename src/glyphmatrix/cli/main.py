@@ -36,6 +36,7 @@ from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.glyph_inspector import find_glyphs, glyph_summary
 from glyphmatrix.core.ingest import ingest_directory
+from glyphmatrix.core.language_coverage import check_script, script_breakdown
 from glyphmatrix.core.licenses import classify_license, list_license_conflicts
 from glyphmatrix.core.packages import (
     add_document,
@@ -355,6 +356,47 @@ def glyphs(
         )
     click.echo(f"  contours: {summary['min_contours']}-{summary['max_contours']}")
     click.echo("  use --char/--codepoint/--name/--search to inspect specific glyphs")
+
+
+@fontctl.command()
+@click.argument("family")
+@click.argument("style")
+@click.option("--script", "script_query", default=None,
+              help="Check coverage for one script (ISO 15924 code like 'Grek', or a name like 'Greek')")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def language(ctx: click.Context, family: str, style: str, script_query: str | None, as_json: bool) -> None:
+    """Unicode script coverage, derived from this file's already-parsed glyph
+    codepoints. No filter: full breakdown. --script: check one script.
+
+    This reports Unicode *script* coverage (Latin, Greek, Cyrillic...), not
+    language — a language like Vietnamese uses the Latin script plus specific
+    diacritic combinations, which script-level coverage can't distinguish."""
+    conn = _connect(ctx)
+    font_file = _resolve_font_file_or_raise(conn, family, style)
+
+    if script_query is not None:
+        try:
+            result = check_script(conn, font_file["id"], script_query)
+        except ValueError as exc:
+            raise click.ClickException(str(exc))
+        if as_json:
+            click.echo(json.dumps(result))
+            return
+        state = "supported" if result["supported"] else "not supported"
+        click.echo(f"{family} {style}: {result['name']} ({result['script']}) — {state}, {result['glyph_count']} glyphs")
+        return
+
+    breakdown = script_breakdown(conn, font_file["id"])
+    if as_json:
+        click.echo(json.dumps(breakdown))
+        return
+    if not breakdown:
+        click.echo("no mapped glyphs found")
+        return
+    click.echo(f"{family} {style}: {len(breakdown)} scripts")
+    for row in breakdown:
+        click.echo(f"  {row['name']:<20} ({row['script']})  {row['glyph_count']} glyphs")
 
 
 @fontctl.command()

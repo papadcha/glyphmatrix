@@ -84,9 +84,15 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] `-o/--render <path>` (requires `--char`) reuses `core/renderer.py`'s `render_text_preview` to export that one glyph as a PNG — genuine visual inspection without a GUI, by connecting two already-built pieces rather than writing new rendering code.
 - [x] **Verified on real hardware, and it closed the loop on the very first thing discussed in this project**: `fontctl glyphs Inconsolata Regular --char δ` correctly returned "no matching glyphs" — confirmed via `fontTools.getBestCmap()` that Inconsolata's real cmap (882 codepoints, none in the Greek block) genuinely lacks it, not a bug. `fontctl glyphs "DejaVu Sans" Book --char δ` found it (glyph name `delta`, U+03B4, 2 contours) and rendered it to a real PNG.
 
+## Language Coverage — first item picked up in a new session (2026-08-11)
+- [x] `fontctl language <family> <style>` — Unicode *script* coverage (`core/language_coverage.py`), grouping the already-parsed `font_glyphs.unicode_codepoint` values by Unicode script via `fontTools.unicodedata` (the same bundled UCD used nowhere else yet in this codebase, zero new dependency). No filter: full script breakdown sorted by glyph count. `--script <query>` accepts either an ISO 15924 code (`Grek`) or an English script name (`Greek`, case-insensitive) and reports supported/glyph_count for just that one.
+- [x] **Deliberately scoped as script coverage, not language coverage**, and said so explicitly rather than overselling it: a language like Vietnamese uses the Latin *script* plus specific diacritic combinations that script identity alone can't see, so `resolve_script_query` raises a clear error on a language name (e.g. "Vietnamese") instead of silently resolving to something wrong — same house style as the license-classification lesson ([[project-glyphmatrix]]): an honest "can't answer that" beats a confident wrong one.
+- [x] **Verified on real hardware**: `fontctl language Arial Regular` against the real Windows `arial.ttf` correctly reported 11 scripts (Latin 1382, Arabic 582, Common 378, Greek 368, Cyrillic 302, Inherited 146, Hebrew 134, Armenian 96, Coptic 14, Bopomofo 2, Unknown 1); `--script Cyrillic`/`--script Grek` both matched case-insensitively; `--script Vietnamese` and `--script Thaana` (real script, genuinely absent from Arial) correctly distinguished "unrecognized query" from "recognized but unsupported."
+- [x] 270/270 tests passing.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
-- [x] 262/262 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
+- [x] 270/270 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)
 
 ## Confirmed decisions
 - [x] Open decision #1 (platform): macOS-first
