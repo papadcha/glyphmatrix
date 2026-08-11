@@ -13,7 +13,6 @@ Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled 
 - [ ] Google Fonts integration
 - [ ] PDF catalog export
 - [ ] Auto-activation per document/project
-- [ ] AiMusix integration (API/CLI bridge, never tight-coupled — see docs/proposal.md "Standalone" section)
 
 ## V4 — experimental / maybe never
 - [ ] AI mood tagging — deprioritized per proposal's own judgment (subjective, needs a model)
