@@ -3,7 +3,6 @@
 Ordered roughly by the roadmap in `docs/proposal.md`. Nothing here is scheduled — pick items up in whatever order makes sense when picking work back up.
 
 ## V2 — Intelligence
-- [ ] Glyph inspector (UI-facing; `font_glyphs` already has the per-glyph data `compare` uses)
 - [ ] Language coverage checks
 - [ ] OpenType features
 - [ ] Font pairing suggestions

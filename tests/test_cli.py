@@ -829,6 +829,95 @@ def test_fontctl_preview_unknown_face_errors(tmp_path):
     assert "no such face" in result.output
 
 
+def test_fontctl_glyphs_summary_by_default(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "glyphs", "Arial", "Regular"])
+
+    assert result.exit_code == 0, result.output
+    assert "2 glyphs" in result.output
+    assert "U+0041-U+0041" in result.output
+
+
+def test_fontctl_glyphs_by_char(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "glyphs", "Arial", "Regular", "--char", "A"])
+
+    assert result.exit_code == 0, result.output
+    assert "U+0041" in result.output
+    assert "contours=" in result.output
+
+
+def test_fontctl_glyphs_by_char_no_match(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(fontctl, ["--db", str(db_path), "glyphs", "Arial", "Regular", "--char", "Z"])
+
+    assert result.exit_code == 0, result.output
+    assert "no matching glyphs" in result.output
+
+
+def test_fontctl_glyphs_by_codepoint_hex(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "glyphs", "Arial", "Regular", "--codepoint", "0x41"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "U+0041" in result.output
+
+
+def test_fontctl_glyphs_invalid_codepoint_errors(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "glyphs", "Arial", "Regular", "--codepoint", "not-a-number"]
+    )
+
+    assert result.exit_code != 0
+    assert "invalid --codepoint" in result.output
+
+
+def test_fontctl_glyphs_by_name_json(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "glyphs", "Arial", "Regular", "--json", "--name", ".notdef"]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert len(payload) == 1
+    assert payload[0]["glyph_name"] == ".notdef"
+
+
+def test_fontctl_glyphs_render_writes_png(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+    out_path = tmp_path / "glyph.png"
+
+    result = runner.invoke(
+        fontctl,
+        ["--db", str(db_path), "glyphs", "Arial", "Regular", "--char", "A", "-o", str(out_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert out_path.exists()
+    assert f"rendered 'A' to {out_path}" in result.output
+
+
+def test_fontctl_glyphs_render_without_char_errors(tmp_path):
+    runner, db_path = _scanned_db(tmp_path)
+
+    result = runner.invoke(
+        fontctl, ["--db", str(db_path), "glyphs", "Arial", "Regular", "-o", "glyph.png"]
+    )
+
+    assert result.exit_code != 0
+    assert "--render needs --char" in result.output
+
+
 def test_fontctl_package_create_add_show(tmp_path):
     runner, db_path = _scanned_db(tmp_path)
 

@@ -224,6 +224,30 @@ classification) — το license μπορεί νόμιμα να διαφέρει
 αφαιρέθηκε — καλύτερα τίμιο "Unknown" παρά σίγουρη λάθος απάντηση σε κάτι
 με πραγματικές νομικές συνέπειες.
 
+## Glyph Inspector (2026-08-11)
+
+`fontctl glyphs <family> <style>` κάνει ερωτήματα πάνω στον πίνακα
+`font_glyphs` που ήδη γέμιζε το `fontctl compare` — δεν χρειάστηκε νέα
+εξαγωγή δεδομένων, μόνο ένας τρόπος να τα δει κανείς. Χωρίς φίλτρο
+δείχνει σύνοψη (πλήθος glyphs, εύρος codepoints, πόσα έχουν
+αντιστοίχιση Unicode, εύρος contours) αντί να ξεχύνει χιλιάδες
+γραμμές. Με `--char`/`--codepoint` (δεκαδικό ή `0xHEX`)/`--name`/
+`--search` επιστρέφει τα glyphs που ταιριάζουν ένα-ένα.
+
+Το `-o/--render <path>` (απαιτεί `--char`) επαναχρησιμοποιεί το ήδη
+υπάρχον `core/renderer.py` για να εξάγει το glyph ως PNG — οπτικός
+έλεγχος χωρίς GUI, συνδέοντας δύο κομμάτια που υπήρχαν ήδη αντί να
+γραφτεί καινούριος κώδικας rendering.
+
+Επαληθεύτηκε σε πραγματικά fonts, κλείνοντας τον κύκλο με το πρώτο
+παράδειγμα που συζητήθηκε σε αυτό το project: το `fontctl glyphs
+Inconsolata Regular --char δ` σωστά επέστρεψε "no matching glyphs" —
+επιβεβαιώθηκε μέσω `fontTools.getBestCmap()` ότι το πραγματικό cmap
+της Inconsolata (882 codepoints, κανένα ελληνικό) γνησίως δεν το έχει,
+όχι bug. Το `fontctl glyphs "DejaVu Sans" Book --char δ` το βρήκε
+(glyph name `delta`, U+03B4, 2 contours) και το απέδωσε σε πραγματικό
+PNG.
+
 ## Η δική μου κρίση πάνω στις προτάσεις
 
 - **Συμφωνώ** με το activation-on-demand ως κεντρικό feature — είναι αυτό που

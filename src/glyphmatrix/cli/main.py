@@ -34,6 +34,7 @@ from glyphmatrix.core.compare import compare_font_files
 from glyphmatrix.core.conflicts import list_conflicts
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
+from glyphmatrix.core.glyph_inspector import find_glyphs, glyph_summary
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.licenses import classify_license, list_license_conflicts
 from glyphmatrix.core.packages import (
@@ -274,6 +275,86 @@ def preview(
         click.echo(json.dumps({"output": str(out)}))
     else:
         click.echo(f"wrote {out}")
+
+
+@fontctl.command()
+@click.argument("family")
+@click.argument("style")
+@click.option("--char", default=None, help="Inspect the glyph for this single character")
+@click.option("--codepoint", default=None, help="Inspect by Unicode codepoint, decimal or 0xHEX")
+@click.option("--name", "glyph_name", default=None, help="Inspect by exact glyph name")
+@click.option("--search", "name_search", default=None, help="Filter glyph names containing this text")
+@click.option("-o", "--render", "render_path", type=click.Path(), default=None,
+              help="With --char: also render that glyph to this PNG path")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def glyphs(
+    ctx: click.Context,
+    family: str,
+    style: str,
+    char: str | None,
+    codepoint: str | None,
+    glyph_name: str | None,
+    name_search: str | None,
+    render_path: str | None,
+    as_json: bool,
+) -> None:
+    """No filter: shows a summary (glyph count, codepoint/contour range).
+    With --char/--codepoint/--name/--search: lists matching glyphs."""
+    conn = _connect(ctx)
+    font_file = _resolve_font_file_or_raise(conn, family, style)
+
+    resolved_codepoint: int | None = None
+    if char is not None:
+        if len(char) != 1:
+            raise click.ClickException("--char must be exactly one character")
+        resolved_codepoint = ord(char)
+    elif codepoint is not None:
+        try:
+            resolved_codepoint = int(codepoint, 0)
+        except ValueError:
+            raise click.ClickException(f"invalid --codepoint: {codepoint!r}")
+
+    if render_path is not None:
+        if char is None:
+            raise click.ClickException("--render needs --char (renders that one character)")
+        render_text_preview(font_file["path"], char, render_path, font_size=200)
+        click.echo(f"rendered '{char}' to {render_path}")
+
+    if resolved_codepoint is not None or glyph_name is not None or name_search is not None:
+        matches = find_glyphs(
+            conn,
+            font_file["id"],
+            glyph_name=glyph_name,
+            codepoint=resolved_codepoint,
+            name_search=name_search,
+        )
+        if as_json:
+            click.echo(json.dumps(matches))
+            return
+        if not matches:
+            click.echo("no matching glyphs")
+            return
+        for g in matches:
+            cp = f"U+{g['unicode_codepoint']:04X}" if g["unicode_codepoint"] is not None else "-"
+            click.echo(
+                f"{g['glyph_name']:<20} {cp:<10} contours={g['contour_count']} "
+                f"advance={g['advance_width']}  outline_hash={g['outline_hash'][:12]}"
+            )
+        return
+
+    summary = glyph_summary(conn, font_file["id"])
+    if as_json:
+        click.echo(json.dumps(summary))
+        return
+    click.echo(f"{family} {style}: {summary['glyph_count']} glyphs")
+    if summary["min_codepoint"] is not None:
+        click.echo(
+            f"  codepoints U+{summary['min_codepoint']:04X}-U+{summary['max_codepoint']:04X} "
+            f"({summary['mapped_count']} mapped to a codepoint)"
+        )
+    click.echo(f"  contours: {summary['min_contours']}-{summary['max_contours']}")
+    click.echo("  use --char/--codepoint/--name/--search to inspect specific glyphs")
 
 
 @fontctl.command()
