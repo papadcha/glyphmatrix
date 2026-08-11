@@ -9,7 +9,6 @@ DONE.md for what each one actually does and how it was verified. One open follow
 - [ ] License classification is deliberately conservative (`core/licenses.py`, keyword matching against license text — no NLP). A real false positive was already found and fixed on 2026-08-11: "All Rights Reserved" alone was originally treated as a Commercial/Proprietary signal, but that phrase is standard copyright-ownership boilerplate that shows up in plenty of fully permissive licenses too (DejaVu Sans's Bitstream Vera license does this). If more license text patterns turn out unreliable the same way, prefer removing the signature (falling back to "Unknown") over trying to make the matching cleverer — a wrong confident answer is worse than an honest "don't know" for something with real licensing implications.
 
 ## V3 — Ecosystem
-- [ ] Google Fonts integration
 - [ ] PDF catalog export
 - [ ] Auto-activation per document/project
 

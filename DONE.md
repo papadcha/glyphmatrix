@@ -112,6 +112,13 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] **Verified on real hardware**: `fontctl pair Arial Regular` against a real mixed set (Arial, Times New Roman, Comic Sans MS, Georgia, all Windows system fonts) correctly ranked Times New Roman Bold (biggest weight contrast, 700 vs 400) above Comic Sans MS and Georgia (both weight 400, tied); `fontctl pair "Times New Roman" Regular` correctly suggested only Arial Bold; `fontctl pair "Comic Sans MS" Regular` correctly suggested Arial (script↔sans), not Times/Georgia (script↔serif isn't a rule this implements).
 - [x] 293/293 tests passing. **All V2 Intelligence items now done**: smart collections, license metadata, glyph inspector, language coverage, OpenType features, PANOSE, font pairing.
 
+## Google Fonts Integration (2026-08-11)
+- [x] `fontctl gf key <API_KEY>` — stores key in `~/.glyphmatrix/config.json`. Required for all `gf` subcommands; fails clearly if not set.
+- [x] `fontctl gf list [--category] [--subset] [--sort alpha|popularity|date|trending|style]` — full Google Fonts catalog from the official API, with client-side category/subset filtering.
+- [x] `fontctl gf search <term>` — case-insensitive substring match on family name across the whole catalog.
+- [x] `fontctl gf info <family>` — variants, subsets, file count for a specific family.
+- [x] `fontctl gf download <family> --dest <path>` — downloads all variant files to `<path>` (created if needed), then immediately ingests them into the library. Idempotent: existing files are skipped. No new dependency — uses stdlib `urllib` only. 13 tests with mocked HTTP; 309/309 passing.
+
 ## Infra
 - [x] GitHub repo (private): https://github.com/papadcha/glyphmatrix — Windows + Mac sessions collaborating via push/pull
 - [x] 293/293 tests passing (synthetic TTFs via `fontTools.fontBuilder`, portable across platforms — no system-font dependency; Windows-activation tests skip on non-Windows via `pytest.mark.skipif`, Linux-activation tests run everywhere since `fc-cache`/symlinks are fully mocked)

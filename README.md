@@ -33,6 +33,11 @@ fontctl info <family>
 fontctl compare <family> <style> <version_a> <version_b>
 fontctl validate
 fontctl duplicates
+fontctl gf key <API_KEY>
+fontctl gf list [--category CATEGORY] [--subset SUBSET] [--sort alpha|popularity|...]
+fontctl gf search <term>
+fontctl gf info <family>
+fontctl gf download <family> --dest <path>
 fontctl activate <family>
 fontctl deactivate <family>
 fontctl activate-file <path>

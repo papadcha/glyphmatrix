@@ -21,6 +21,8 @@ from glyphmatrix.core.activation_service import (
     restore_active_state,
 )
 from glyphmatrix.core.backup import backup_database, restore_database
+from glyphmatrix.core.gf_config import get_api_key, set_api_key
+from glyphmatrix.core.google_fonts import download_family, get_family, search_catalog, get_catalog
 from glyphmatrix.core.collections import (
     FAVORITES_COLLECTION_NAME,
     add_face_to_collection,
@@ -1160,6 +1162,141 @@ def restore(ctx: click.Context, source_path: str, yes: bool) -> None:
         )
     restore_database(source_path, db_path)
     click.echo(f"restored {db_path} from {source_path}")
+
+
+def _require_api_key() -> str:
+    key = get_api_key()
+    if not key:
+        raise click.ClickException(
+            "no Google Fonts API key configured — run `fontctl gf key <YOUR_KEY>` first"
+        )
+    return key
+
+
+@fontctl.group()
+def gf() -> None:
+    """Browse and download fonts from Google Fonts."""
+
+
+@gf.command(name="key")
+@click.argument("api_key")
+def gf_key(api_key: str) -> None:
+    """Save your Google Fonts API key (stored in ~/.glyphmatrix/config.json)."""
+    set_api_key(api_key)
+    click.echo("Google Fonts API key saved.")
+
+
+@gf.command(name="list")
+@click.option("--category", default=None,
+              help="Filter by category: serif, sans-serif, monospace, display, handwriting")
+@click.option("--subset", default=None,
+              help="Filter by subset, e.g. 'greek', 'latin-ext'")
+@click.option("--sort", default="alpha", show_default=True,
+              type=click.Choice(["alpha", "popularity", "date", "trending", "style"]))
+@click.option("--json", "as_json", is_flag=True)
+def gf_list(category: str | None, subset: str | None, sort: str, as_json: bool) -> None:
+    """List all families in the Google Fonts catalog."""
+    key = _require_api_key()
+    try:
+        items = get_catalog(key, sort=sort)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc))
+
+    if category:
+        items = [f for f in items if f.get("category", "").lower() == category.lower()]
+    if subset:
+        items = [f for f in items if subset.lower() in [s.lower() for s in f.get("subsets", [])]]
+
+    if as_json:
+        click.echo(json.dumps(items))
+        return
+    if not items:
+        click.echo("no families match")
+        return
+    for f in items:
+        variants = len(f.get("variants", []))
+        click.echo(f"{f['family']:<32} {f.get('category', '-'):<14} {variants} variant(s)")
+
+
+@gf.command(name="search")
+@click.argument("term")
+@click.option("--sort", default="alpha", show_default=True,
+              type=click.Choice(["alpha", "popularity", "date", "trending", "style"]))
+@click.option("--json", "as_json", is_flag=True)
+def gf_search(term: str, sort: str, as_json: bool) -> None:
+    """Search the Google Fonts catalog by family name."""
+    key = _require_api_key()
+    try:
+        items = search_catalog(key, term, sort=sort)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc))
+
+    if as_json:
+        click.echo(json.dumps(items))
+        return
+    if not items:
+        click.echo(f"no families matching '{term}'")
+        return
+    for f in items:
+        variants = len(f.get("variants", []))
+        click.echo(f"{f['family']:<32} {f.get('category', '-'):<14} {variants} variant(s)")
+
+
+@gf.command(name="info")
+@click.argument("family")
+@click.option("--json", "as_json", is_flag=True)
+def gf_info(family: str, as_json: bool) -> None:
+    """Show metadata for a specific Google Fonts family."""
+    key = _require_api_key()
+    try:
+        item = get_family(key, family)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc))
+    if item is None:
+        raise click.ClickException(f"family '{family}' not found in Google Fonts catalog")
+
+    if as_json:
+        click.echo(json.dumps(item))
+        return
+
+    click.echo(f"{item['family']}  ({item.get('category', '-')})")
+    click.echo(f"  variants: {', '.join(item.get('variants', []))}")
+    click.echo(f"  subsets:  {', '.join(item.get('subsets', []))}")
+    click.echo(f"  files:    {len(item.get('files', {}))}")
+
+
+@gf.command(name="download")
+@click.argument("family")
+@click.option("--dest", required=True, type=click.Path(), help="Directory to save font files into")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def gf_download(ctx: click.Context, family: str, dest: str, as_json: bool) -> None:
+    """Download all variants of a Google Fonts family and add them to the library."""
+    key = _require_api_key()
+    try:
+        paths = download_family(key, family, dest)
+    except (RuntimeError, ValueError) as exc:
+        raise click.ClickException(str(exc))
+
+    conn = _connect(ctx)
+    result = ingest_directory(conn, dest)
+
+    if as_json:
+        click.echo(json.dumps({
+            "downloaded": [str(p) for p in paths],
+            "scanned": result.files_scanned,
+            "added": result.files_added,
+            "changed": result.files_changed,
+        }))
+        return
+
+    click.echo(f"downloaded {len(paths)} file(s) to {dest}")
+    for p in paths:
+        click.echo(f"  {p.name}")
+    click.echo(
+        f"ingested: scanned {result.files_scanned}  added {result.files_added}  "
+        f"changed {result.files_changed}  errors {result.errors}"
+    )
 
 
 if __name__ == "__main__":
