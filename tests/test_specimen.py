@@ -87,3 +87,40 @@ def test_top_level_fonts_get_no_heading(tmp_path):
     build_test_font(root / "Fam" / "v1.00" / "a.ttf", extra_codepoints=LATIN)
 
     assert collect(root)[0].group == ""
+
+
+def test_samples_are_sized_by_ink_and_trimmed_by_words(tmp_path):
+    from glyphmatrix.core.specimen import MIN_GLYPH, TARGET_GLYPH, _fit_font
+
+    small = build_test_font(tmp_path / "small.ttf", a_glyph_size=300, extra_codepoints=LATIN)
+    big = build_test_font(tmp_path / "big.ttf", a_glyph_size=900, extra_codepoints=LATIN)
+
+    font_small, _ = _fit_font(small, "A", 2000)
+    font_big, _ = _fit_font(big, "A", 2000)
+    for font in (font_small, font_big):
+        box = font.getbbox("A")
+        assert abs((box[3] - box[1]) - TARGET_GLYPH) <= 3
+    assert font_small.size > font_big.size
+
+    font, text = _fit_font(big, "A A A A A A A A A A A A A A A A A A A A", 300)
+    box = font.getbbox("A")
+    assert box[3] - box[1] >= MIN_GLYPH - 2
+    assert font.getlength(text) <= 300
+    assert text.endswith("A") and set(text) <= {"A", " "}
+
+
+def test_word_art_fonts_show_their_letters(tmp_path):
+    from fontTools.ttLib import TTFont
+
+    root = tmp_path / "fonts"
+    root.mkdir()
+    letters = {ord(c): c for c in "abcdefgh"}
+    path = build_test_font(root / "words.ttf", family="Back to School", extra_codepoints=letters)
+    font = TTFont(path)
+    for c in "abcdefgh":  # 300-unit-tall drawings, 1500 units wide: phrases, not letters
+        font["hmtx"][c] = (1500, 0)
+    font.save(path)
+
+    entry = collect(root)[0]
+
+    assert (entry.sample, entry.note) == ("abcdefgh", "word-art font")
