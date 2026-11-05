@@ -9,6 +9,7 @@ from fontTools.pens.recordingPen import RecordingPen
 from fontTools.t1Lib import T1Font
 from fontTools.ttLib import TTFont
 
+from glyphmatrix.core.foundry import resolve_foundry
 from glyphmatrix.core.panose import classify_panose
 
 # CSS-ish label per OS/2.usWidthClass (1-9). None if usWidthClass is absent/unknown.
@@ -569,7 +570,12 @@ def parse_font_file(path: str | Path) -> ParsedFont:
     with TTFont(path, lazy=True) as font:
         name_table = font["name"]
         family_name = name_table.getBestFamilyName() or path.stem
-        foundry = name_table.getDebugName(8)  # nameID 8: Manufacturer
+        vendor_id = font["OS/2"].achVendID if "OS/2" in font else None
+        foundry, _ = resolve_foundry(
+            name_table.getDebugName(8),  # nameID 8: Manufacturer
+            vendor_id,
+            name_table.getDebugName(0),  # nameID 0: Copyright
+        )
         style = name_table.getBestSubFamilyName()
         version = name_table.getDebugName(5)
         license_desc = name_table.getDebugName(13)
