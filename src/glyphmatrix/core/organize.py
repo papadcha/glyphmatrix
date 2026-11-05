@@ -137,6 +137,27 @@ def _review_flags(parsed: ParsedFont, version_from_copyright: bool) -> list[str]
     return flags
 
 
+_VENDOR_FLAGS = ("vendor taken from copyright holder", "vendor unknown")
+
+
+def _settle_vendors(items: list[PlannedMove], forced: str | None, aliases: dict[str, str]) -> None:
+    """Apply --vendor / aliases, then merge spellings that differ only in case
+    ("Two Peas In A Bucket" / "Two Peas in a Bucket") into the most common one."""
+    lowered_aliases = {k.strip().lower(): v.strip() for k, v in aliases.items()}
+    for item in items:
+        chosen = forced or lowered_aliases.get(item.vendor.lower())
+        if chosen:
+            item.vendor = chosen
+            item.flags = [f for f in item.flags if f not in _VENDOR_FLAGS]
+    spellings: dict[str, dict[str, int]] = {}
+    for item in items:
+        counts = spellings.setdefault(item.vendor.lower(), {})
+        counts[item.vendor] = counts.get(item.vendor, 0) + 1
+    for item in items:
+        counts = spellings[item.vendor.lower()]
+        item.vendor = max(counts, key=lambda name: (counts[name], name))
+
+
 def _size_groups(entries: list[tuple[str, str, str]]) -> dict[tuple[str, str], tuple[str, str]]:
     """For (vendor, family, style) entries, map size-suffixed families that share
     a base name within one vendor ("KH Dot Hibiya 24" + "KH Dot Hibiya 32") to
@@ -157,7 +178,15 @@ def _size_groups(entries: list[tuple[str, str, str]]) -> dict[tuple[str, str], t
     return groups
 
 
-def plan_organize(source: str | Path, dest: str | Path | None = None) -> list[PlannedMove]:
+def plan_organize(
+    source: str | Path,
+    dest: str | Path | None = None,
+    vendor: str | None = None,
+    vendor_aliases: dict[str, str] | None = None,
+) -> list[PlannedMove]:
+    """vendor: put every font under this vendor (a folder from one publisher).
+    vendor_aliases: {"Two Peas": "Two Peas in a Bucket", "Unknown": "..."} —
+    matched case-insensitively against the resolved vendor."""
     source = Path(source)
     dest = Path(dest) if dest is not None else source
     plan: list[PlannedMove] = []
@@ -182,8 +211,10 @@ def plan_organize(source: str | Path, dest: str | Path | None = None) -> list[Pl
             )
             continue
 
+        family = parsed.family_name.strip() or path.stem
         style = (parsed.style or "Regular").strip()
-        if style.lower() == "normal":
+        # Some editors write the family name into the style field.
+        if style.lower() in ("normal", family.lower()):
             style = "Regular"
         label, from_copyright = version_label(parsed.version, parsed.copyright)
         item = PlannedMove(
@@ -191,7 +222,7 @@ def plan_organize(source: str | Path, dest: str | Path | None = None) -> list[Pl
             None,
             "move",
             vendor=short_vendor(parsed.foundry),
-            family=parsed.family_name.strip() or path.stem,
+            family=family,
             style=style,
             version_label=label,
             content_hash=parsed.content_hash,
@@ -202,6 +233,7 @@ def plan_organize(source: str | Path, dest: str | Path | None = None) -> list[Pl
         pending.append(item)
         plan.append(item)
 
+    _settle_vendors(pending, vendor, vendor_aliases or {})
     groups = _size_groups([(i.vendor, i.family, i.style) for i in pending])
     for item in pending:
         if (item.vendor, item.family) in groups:
@@ -260,7 +292,7 @@ def _update_db_paths(conn: sqlite3.Connection, moves: list[tuple[Path, Path]]) -
 
 
 _CATALOG_FIELDS = [
-    "Vendor", "Vendor source", "Family", "Style", "Version", "Format", "Characters",
+    "Vendor", "Vendor source", "Designer", "Family", "Style", "Version", "Format", "Characters",
     "Copyright years", "Copyright", "Path", "Original path", "Review",
 ]
 
@@ -270,6 +302,7 @@ def _catalog_row(item: PlannedMove, dest: Path) -> dict:
     return {
         "Vendor": item.vendor,
         "Vendor source": parsed.foundry_source or "",
+        "Designer": parsed.designer or "",
         "Family": item.family,
         "Style": item.style,
         "Version": parsed.version or "",

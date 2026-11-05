@@ -132,17 +132,36 @@ def _rel(path: Path, root: Path) -> str:
               help="Where to build Vendor/Family/Version/ (default: SOURCE itself).")
 @click.option("--apply", "do_apply", is_flag=True,
               help="Actually move files. Without it, only shows the plan.")
+@click.option("--vendor", default=None,
+              help="Put every font under this vendor (a folder from a single publisher).")
+@click.option("--vendor-alias", "vendor_aliases", multiple=True, metavar="OLD=NEW",
+              help="Rename a resolved vendor, e.g. 'Two Peas=Two Peas in a Bucket' or "
+                   "'Unknown=Acme'. Repeatable; case-insensitive.")
 @click.option("--json", "as_json", is_flag=True)
 @click.pass_context
-def organize(ctx: click.Context, source: str, dest: str | None, do_apply: bool, as_json: bool) -> None:
+def organize(
+    ctx: click.Context,
+    source: str,
+    dest: str | None,
+    do_apply: bool,
+    vendor: str | None,
+    vendor_aliases: tuple[str, ...],
+    as_json: bool,
+) -> None:
     """Arrange fonts as Vendor/Family/Version/Family Style.ext.
 
     Dry run by default. With --apply each file is copied, verified and only
     then removed from its old place; an undo log and _Font Catalog.csv are
     written to the destination. Identical duplicates are reported, not moved."""
+    aliases = {}
+    for alias in vendor_aliases:
+        old, sep, new = alias.partition("=")
+        if not sep or not old.strip() or not new.strip():
+            raise click.BadParameter(f"expected OLD=NEW, got {alias!r}", param_hint="--vendor-alias")
+        aliases[old] = new
     source_path = Path(source)
     dest_path = Path(dest) if dest else source_path
-    plan = plan_organize(source_path, dest_path)
+    plan = plan_organize(source_path, dest_path, vendor=vendor, vendor_aliases=aliases)
 
     if do_apply:
         result = apply_organize(plan, source_path, dest_path, conn=_existing_db(ctx))

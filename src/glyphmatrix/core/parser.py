@@ -10,7 +10,7 @@ from fontTools.pens.recordingPen import RecordingPen
 from fontTools.t1Lib import T1Font
 from fontTools.ttLib import TTCollection, TTFont
 
-from glyphmatrix.core.foundry import copyright_years, resolve_foundry
+from glyphmatrix.core.foundry import clean_designer, copyright_years, resolve_foundry
 from glyphmatrix.core.panose import classify_panose
 
 # CSS-ish label per OS/2.usWidthClass (1-9). None if usWidthClass is absent/unknown.
@@ -80,6 +80,7 @@ class ParsedFont:
     # Where foundry came from: 'manufacturer', 'vendor_id', 'copyright' or None.
     foundry_source: str | None = None
     copyright: str | None = None
+    designer: str | None = None
 
 
 # SFNT (TrueType/OpenType) is the only family fully parsed today. Other
@@ -686,6 +687,7 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         family_name = name_table.getBestFamilyName() or path.stem
         vendor_id = font["OS/2"].achVendID if "OS/2" in font else None
         copyright_text = name_table.getDebugName(0)  # nameID 0: Copyright
+        designer = clean_designer(name_table.getDebugName(9))  # nameID 9: Designer
         foundry, foundry_source = resolve_foundry(
             name_table.getDebugName(8),  # nameID 8: Manufacturer
             vendor_id,
@@ -746,4 +748,5 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         metadata=metadata,
         foundry_source=foundry_source,
         copyright=copyright_text,
+        designer=designer,
     )
