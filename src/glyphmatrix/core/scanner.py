@@ -8,7 +8,7 @@ from typing import Iterator
 # parsed for family/style/glyph metadata yet — see core/parser.py and
 # TODO.md.
 FONT_EXTENSIONS = (
-    ".ttf", ".otf", ".ttc", ".woff", ".woff2",
+    ".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2",
     ".pfb", ".pfa", ".bdf", ".pcf", ".fon", ".dfont",
 )
 

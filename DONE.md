@@ -155,3 +155,11 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] Open decision #3 (standalone vs. AiMusix module): standalone, confirmed — integration only via API/CLI later, never tight-coupled
 - [x] Open decision #4 (schema v0.1 review): done 2026-08-10 after real usage across every module. Fixed 3 real gaps — `families.foundry` existed but was never populated (now extracted from nameID 8), missing indexes on `font_files.path`/`content_hash`, and three UNIQUE constraints (`font_files.path`, `activations(font_file_id, platform)`, `collections.name`) that were only enforced in application code, not the schema. Everything else that looked unused (`axes_json`, `is_smart`/`smart_query`, `metadata_json`) is intentional forecast, not a gap — matches the "predict the field, add logic later" pattern already used for the 4-state activation model. Existing `library.db` files predate these constraints (`CREATE TABLE IF NOT EXISTS` doesn't retrofit them) — delete and rescan.
 - [x] Open decision #5 (`fontctl` output format): confirmed — plain text default, `--json` flag per command. Already how every command was built; now explicitly locked rather than just assumed.
+
+## Foundry, collections, FON metadata, organize (2026-11-05)
+- [x] Foundry fallback when nameID 8 is empty: known `OS/2.achVendID` → copyright holder (`core/foundry.py`); placeholder vendor IDs ignored. On a real 46-file folder: foundry found for 44 instead of 8.
+- [x] `.ttc`/`.otc` parse (first member is the face, all members in `metadata_json`) — previously scan errors.
+- [x] `.fon`: copyright years, NE description, bitmap sizes, charset, FNT version; shown by `fontctl info`.
+- [x] Version from unique ID when nameID 5 has no number, only if `head.fontRevision` agrees.
+- [x] `fontctl organize` / `organize-undo` — explicit, dry-run-first reorganization into Vendor/Family/Version with verified moves, undo log, catalog CSV and review flags (`core/organize.py`). Checked on the real 46-file folder: apply + undo restored every file byte-for-byte.
+

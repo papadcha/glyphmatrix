@@ -46,6 +46,7 @@ from glyphmatrix.core.glyph_inspector import find_glyphs, glyph_summary
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.language_coverage import check_script, script_breakdown
 from glyphmatrix.core.opentype_features import list_features
+from glyphmatrix.core.organize import apply_organize, plan_organize, undo_organize
 from glyphmatrix.core.licenses import classify_license, list_license_conflicts
 from glyphmatrix.core.packages import (
     add_document,
@@ -110,6 +111,101 @@ def scan(ctx: click.Context, directory: str, as_json: bool) -> None:
             f"changed {result.files_changed}  removed {result.files_removed}  "
             f"errors {result.errors}"
         )
+
+
+def _existing_db(ctx: click.Context) -> sqlite3.Connection | None:
+    """The library DB if it already exists — organize keeps its paths in sync
+    but never creates a library just for that."""
+    return _connect(ctx) if Path(ctx.obj["db_path"]).exists() else None
+
+
+def _rel(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
+@fontctl.command()
+@click.argument("source", type=click.Path(exists=True, file_okay=False))
+@click.option("--dest", type=click.Path(file_okay=False), default=None,
+              help="Where to build Vendor/Family/Version/ (default: SOURCE itself).")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Actually move files. Without it, only shows the plan.")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def organize(ctx: click.Context, source: str, dest: str | None, do_apply: bool, as_json: bool) -> None:
+    """Arrange fonts as Vendor/Family/Version/Family Style.ext.
+
+    Dry run by default. With --apply each file is copied, verified and only
+    then removed from its old place; an undo log and _Font Catalog.csv are
+    written to the destination. Identical duplicates are reported, not moved."""
+    source_path = Path(source)
+    dest_path = Path(dest) if dest else source_path
+    plan = plan_organize(source_path, dest_path)
+
+    if do_apply:
+        result = apply_organize(plan, source_path, dest_path, conn=_existing_db(ctx))
+
+    if as_json:
+        payload = {
+            "applied": do_apply,
+            "items": [
+                {
+                    "source": str(i.source),
+                    "destination": str(i.destination) if i.destination else None,
+                    "action": i.action,
+                    "vendor": i.vendor,
+                    "family": i.family,
+                    "style": i.style,
+                    "version": i.version_label,
+                    "review": i.flags,
+                }
+                for i in plan
+            ],
+        }
+        if do_apply:
+            payload["result"] = {
+                k: str(v) if isinstance(v, Path) else v for k, v in asdict(result).items()
+            }
+        click.echo(json.dumps(payload, ensure_ascii=False))
+        return
+
+    for item in plan:
+        if item.action == "unchanged":
+            continue
+        src = _rel(item.source, source_path)
+        if item.destination is None:
+            click.echo(f"[{item.action}] {src}")
+        else:
+            click.echo(f"{src}\n  -> {_rel(item.destination, dest_path)}")
+        for flag in item.flags:
+            click.echo(f"     ! {flag}")
+
+    counts = {a: sum(1 for i in plan if i.action == a) for a in ("move", "unchanged", "duplicate", "error")}
+    review = sum(1 for i in plan if i.flags and i.action == "move")
+    click.echo(
+        f"\n{counts['move']} to move, {counts['unchanged']} already in place, "
+        f"{counts['duplicate']} duplicates, {counts['error']} unreadable, {review} to review"
+    )
+    if not do_apply:
+        click.echo("dry run: nothing moved. Re-run with --apply to move files.")
+        return
+    click.echo(f"moved {result.moved}, errors {result.errors}")
+    if result.undo_log:
+        click.echo(f"undo log: {result.undo_log}")
+    click.echo(f"catalog: {result.catalog}")
+
+
+@fontctl.command(name="organize-undo")
+@click.argument("log", type=click.Path(exists=True, dir_okay=False))
+@click.pass_context
+def organize_undo(ctx: click.Context, log: str) -> None:
+    """Move files back using an undo log written by 'organize --apply'."""
+    restored, problems = undo_organize(log, conn=_existing_db(ctx))
+    click.echo(f"restored {restored}")
+    for problem in problems:
+        click.echo(f"  ! {problem}")
 
 
 @fontctl.command(name="list")

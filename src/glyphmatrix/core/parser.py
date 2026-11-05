@@ -77,6 +77,9 @@ class ParsedFont:
     # Format-specific extras stored in font_files.metadata_json (e.g. FON sizes,
     # TTC members). None when the format has nothing beyond the common fields.
     metadata: dict | None = None
+    # Where foundry came from: 'manufacturer', 'vendor_id', 'copyright' or None.
+    foundry_source: str | None = None
+    copyright: str | None = None
 
 
 # SFNT (TrueType/OpenType) is the only family fully parsed today. Other
@@ -528,7 +531,7 @@ def _parse_fon(path: Path, content_hash: str) -> ParsedFont:
         (i["copyright"] for i in infos if i["copyright"]), key=len, default=None
     )
     glyph_count = max(i["glyph_count"] for i in infos)
-    foundry, _ = resolve_foundry(None, None, license_text)
+    foundry, foundry_source = resolve_foundry(None, None, license_text)
 
     metadata: dict = {
         "copyright": license_text,
@@ -561,6 +564,8 @@ def _parse_fon(path: Path, content_hash: str) -> ParsedFont:
         glyphs=[],
         metadata_complete=True,
         metadata={k: v for k, v in metadata.items() if v},
+        foundry_source=foundry_source,
+        copyright=license_text,
     )
 
 
@@ -680,10 +685,11 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         name_table = font["name"]
         family_name = name_table.getBestFamilyName() or path.stem
         vendor_id = font["OS/2"].achVendID if "OS/2" in font else None
-        foundry, _ = resolve_foundry(
+        copyright_text = name_table.getDebugName(0)  # nameID 0: Copyright
+        foundry, foundry_source = resolve_foundry(
             name_table.getDebugName(8),  # nameID 8: Manufacturer
             vendor_id,
-            name_table.getDebugName(0),  # nameID 0: Copyright
+            copyright_text,
         )
         style = name_table.getBestSubFamilyName()
         version = name_table.getDebugName(5)
@@ -738,4 +744,6 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         family_class=family_class,
         panose_class=panose_class,
         metadata=metadata,
+        foundry_source=foundry_source,
+        copyright=copyright_text,
     )

@@ -28,6 +28,8 @@ docs/           proposal.md
 
 ```
 fontctl scan <directory>
+fontctl organize <directory> [--dest DIR] [--apply]
+fontctl organize-undo <undo-log.csv>
 fontctl list
 fontctl info <family>
 fontctl compare <family> <style> <version_a> <version_b>
@@ -54,6 +56,25 @@ fontctl preview <family> <style> [--text] [--size] [--waterfall] [-o]
 
 Every command takes `--db <path>` (default `~/.glyphmatrix/library.db`) and
 most take `--json` for scriptable output.
+
+## Organizing a folder on disk
+
+`fontctl organize` is the one command that moves user files, and only when
+asked. It arranges a folder as `Vendor/Family/Version/Family Style.ext`:
+
+- **Vendor**: Manufacturer (nameID 8) → known vendor ID → copyright holder;
+  corporate suffixes dropped ("Monotype Imaging Inc." → "Monotype").
+- **Version**: `v1.23`; if the font has no version, `©1991` from the latest
+  copyright year; otherwise `No Version`.
+- Size variants that share a name ("KH Dot Hibiya 24/32") share one folder.
+
+It is a dry run unless `--apply` is given. Moves are copy → verify sha256 →
+delete original; identical duplicates are reported and left alone; anything
+guessed (vendor from copyright, several copyright holders, version from the
+unique ID) is listed for review. `--apply` writes `_Font Catalog.csv` and an
+undo log (`_organize-<timestamp>.csv`) into the destination;
+`fontctl organize-undo <log>` puts every file back. Library DB paths are
+updated if the DB exists.
 
 ## Dev setup
 
