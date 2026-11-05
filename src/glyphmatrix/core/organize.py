@@ -181,12 +181,83 @@ def _settle_vendors(items: list[PlannedMove], forced: str | None, aliases: dict[
         item.vendor = max(counts, key=lambda name: (counts[name], name))
 
 
+# Abbreviated weight/width/slope tokens glued onto Windows-style family names
+# ("AvantGarGotItcTMedCon" = AvantGarGotItcT Medium Condensed). Longest first.
+_STYLE_TOKENS: list[tuple[str, str, int]] = sorted(
+    [
+        # (token, word, order: 0 weight, 1 width, 2 slope)
+        ("UltLig", "Ultra Light", 0), ("ExtLig", "Extra Light", 0), ("XLig", "Extra Light", 0),
+        ("XLt", "Extra Light", 0), ("Thi", "Thin", 0), ("Thin", "Thin", 0),
+        ("Lig", "Light", 0), ("Lt", "Light", 0), ("Light", "Light", 0),
+        ("Boo", "Book", 0), ("Bk", "Book", 0), ("Book", "Book", 0),
+        ("Med", "Medium", 0), ("Md", "Medium", 0), ("Medium", "Medium", 0),
+        ("Dem", "Demi", 0), ("Demi", "Demi", 0), ("SemBol", "Semibold", 0), ("SmBd", "Semibold", 0),
+        ("Bol", "Bold", 0), ("Bd", "Bold", 0), ("Bold", "Bold", 0),
+        ("ExtBol", "Extra Bold", 0), ("XBd", "Extra Bold", 0),
+        ("Hea", "Heavy", 0), ("Hv", "Heavy", 0), ("Heavy", "Heavy", 0),
+        ("Bla", "Black", 0), ("Blk", "Black", 0), ("Black", "Black", 0),
+        ("ExtCon", "Extra Condensed", 1), ("XCn", "Extra Condensed", 1),
+        ("Con", "Condensed", 1), ("Cn", "Condensed", 1), ("Cond", "Condensed", 1),
+        ("Condensed", "Condensed", 1), ("Nar", "Narrow", 1), ("Narrow", "Narrow", 1),
+        ("Exp", "Expanded", 1), ("Wid", "Wide", 1), ("Wide", "Wide", 1),
+        ("Ita", "Italic", 2), ("It", "Italic", 2), ("Italic", "Italic", 2),
+        ("Obl", "Oblique", 2), ("Oblique", "Oblique", 2),
+    ],
+    key=lambda t: -len(t[0]),
+)
+_STYLE_ORDER = {word: order for _, word, order in _STYLE_TOKENS}
+_STYLE_ORDER.update({"Regular": 0, "Roman": 0})
+
+
+def _parse_style_tokens(suffix: str) -> list[str] | None:
+    """'MedCon' -> ['Medium', 'Condensed']; None unless the whole suffix is tokens."""
+    words, rest = [], suffix
+    while rest:
+        for token, word, _ in _STYLE_TOKENS:
+            # A token must end at the string end or before the next capital.
+            if rest.startswith(token) and (len(rest) == len(token) or rest[len(token)].isupper()):
+                words.append(word)
+                rest = rest[len(token):]
+                break
+        else:
+            return None
+    return words
+
+
+def _combine_style(extra_words: list[str], style: str) -> str:
+    """Merge words from an abbreviated name with the font's own style, ordered
+    weight, width, slope: ['Condensed'] + 'Bold' -> 'Bold Condensed'."""
+    words = [w for w in extra_words]
+    for word in style.split():
+        if word.lower() not in ("regular", "roman") and word not in words:
+            words.append(word)
+    words.sort(key=lambda w: _STYLE_ORDER.get(w, 0))
+    return " ".join(words) or "Regular"
+
+
+def _abbreviated_base(family: str, bases: list[str]) -> tuple[str, list[str]] | None:
+    """The longest other family that this one extends by abbreviated style
+    tokens only: 'AvantGarGotItcTMedCon' over 'AvantGarGotItcT'."""
+    for base in sorted(bases, key=len, reverse=True):
+        if len(base) >= len(family) or not family.startswith(base):
+            continue
+        suffix = family[len(base):]
+        if not suffix[0].isupper():
+            continue
+        words = _parse_style_tokens(suffix)
+        if words:
+            return base, words
+    return None
+
+
 def _group_by_shared_name(items: list[PlannedMove]) -> None:
     """Within one vendor and one source folder, a font whose family name starts
     with another font's family name joins that family; the rest of its name
     becomes its style: "2Peas Flea Market Block Irregular" next to
     "2Peas Flea Market" -> family "2Peas Flea Market", style "Block Irregular".
-    Names equal except for case also merge. The source folder is the signal
+    Names equal except for case also merge, and so do Windows-style names
+    with abbreviated styles glued on ("AvantGarGotItcTMedCon" joins
+    "AvantGarGotItcT" as "Medium Condensed"). The source folder is the signal
     that a publisher packaged them together, so unrelated fonts that merely
     share a prefix elsewhere stay apart."""
     folders: dict[tuple[str, Path], list[PlannedMove]] = {}
@@ -204,6 +275,12 @@ def _group_by_shared_name(items: list[PlannedMove]) -> None:
                 None,
             )
             if base is None:
+                abbreviated = _abbreviated_base(item.family, bases)
+                if abbreviated:
+                    base, words = abbreviated
+                    item.family, item.style = base, _combine_style(words, item.style)
+                    item.flags.append(f"grouped with {base} (abbreviated style in name)")
+                    continue
                 same = [b for b in bases if b.casefold() == folded]
                 if len(same) > 1:
                     # Deterministic pick: the most used spelling, then the one

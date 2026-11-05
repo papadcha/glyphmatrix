@@ -367,3 +367,35 @@ def test_case_variants_of_one_name_merge_and_grouping_can_be_disabled(tmp_path):
 
     assert {p.family for p in plan_organize(root)} == {"2Peas Flower Girl"}
     assert {p.family for p in plan_organize(root, group_families=False)} == {"2Peas Flower Girl", "2Peas flower girl"}
+
+
+def test_abbreviated_styles_join_their_family(tmp_path):
+    from glyphmatrix.core.organize import _combine_style, _parse_style_tokens
+
+    assert _parse_style_tokens("MedCon") == ["Medium", "Condensed"]
+    assert _parse_style_tokens("ExtLig") == ["Extra Light"]
+    assert _parse_style_tokens("EE") is None
+    assert _parse_style_tokens("EEMed") is None
+    assert _combine_style(["Condensed"], "Bold") == "Bold Condensed"
+    assert _combine_style(["Medium"], "Italic") == "Medium Italic"
+
+    root = tmp_path / "fonts"
+    root.mkdir()
+    specs = [
+        ("t.ttf", "AvantGarGotItcT", "Regular"), ("tb.ttf", "AvantGarGotItcT", "Bold"),
+        ("tmed.ttf", "AvantGarGotItcTMed", "Italic"), ("tdemcon.ttf", "AvantGarGotItcTDemCon", "Regular"),
+        ("tcon.ttf", "AvantGarGotItcTCon", "Bold"), ("tee.ttf", "AvantGarGotItcTEE", "Regular"),
+        ("teemed.ttf", "AvantGarGotItcTEEMed", "Regular"), ("l.ttf", "AvantGarGotItcL", "Regular"),
+    ]
+    for i, (name, family, style) in enumerate(specs):
+        build_test_font(root / name, family=family, style=style, manufacturer="URW",
+                        version="Version 1.005", a_glyph_size=500 + i)
+
+    targets = {p.source.name: str(p.destination.relative_to(root)) for p in plan_organize(root)}
+
+    assert targets["tmed.ttf"] == "URW/AvantGarGotItcT/v1.005/AvantGarGotItcT Medium Italic.ttf"
+    assert targets["tdemcon.ttf"] == "URW/AvantGarGotItcT/v1.005/AvantGarGotItcT Demi Condensed.ttf"
+    assert targets["tcon.ttf"] == "URW/AvantGarGotItcT/v1.005/AvantGarGotItcT Bold Condensed.ttf"
+    assert targets["tee.ttf"] == "URW/AvantGarGotItcTEE/v1.005/AvantGarGotItcTEE Regular.ttf"
+    assert targets["teemed.ttf"] == "URW/AvantGarGotItcTEE/v1.005/AvantGarGotItcTEE Medium.ttf"
+    assert targets["l.ttf"] == "URW/AvantGarGotItcL/v1.005/AvantGarGotItcL Regular.ttf"
