@@ -69,6 +69,7 @@ from glyphmatrix.core.query import (
     list_versions,
     search_library,
 )
+from glyphmatrix.core.specimen import DEFAULT_SAMPLE, export_specimen
 from glyphmatrix.core.renderer import DEFAULT_TEXT, render_text_preview, render_waterfall_preview
 from glyphmatrix.core.tags import add_tags, find_faces_by_tag, list_all_tags, list_tags_for_face, remove_tag
 from glyphmatrix.core.validator import validate_library
@@ -223,6 +224,21 @@ def organize(
     if result.undo_log:
         click.echo(f"undo log: {result.undo_log}")
     click.echo(f"catalog: {result.catalog}")
+
+
+@fontctl.command()
+@click.argument("directory", type=click.Path(exists=True, file_okay=False))
+@click.argument("output", metavar="OUTPUT.pdf", type=click.Path(dir_okay=False))
+@click.option("--text", default=DEFAULT_SAMPLE, show_default=True, help="Sample line.")
+@click.option("--title", default=None, help="Page header (default: the folder name).")
+def specimen(directory: str, output: str, text: str, title: str | None) -> None:
+    """PDF list of every font in DIRECTORY: name plus a sample line in that
+    font, grouped by folder. Symbol fonts show their own characters."""
+    try:
+        path, fonts, pages = export_specimen(directory, output, sample_text=text, title=title)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"wrote {path}  ({fonts} fonts, {pages} page{'' if pages == 1 else 's'})")
 
 
 @fontctl.command(name="organize-undo")

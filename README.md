@@ -40,6 +40,7 @@ fontctl project set <directory> <collection>
 fontctl project activate [--path <dir>] [--doc <file>] [--for DURATION]
 fontctl project deactivate [--path <dir>] [--doc <file>]
 fontctl project list
+fontctl specimen <directory> <output.pdf> [--text TEXT] [--title TITLE]
 fontctl catalog <output.pdf> [--text TEXT] [--family FAMILY...]
 fontctl gf key <API_KEY>
 fontctl gf list [--category CATEGORY] [--subset SUBSET] [--sort alpha|popularity|...]
