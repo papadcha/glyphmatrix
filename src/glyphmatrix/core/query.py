@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import platform as platform_module
 import sqlite3
 
@@ -30,6 +32,14 @@ def list_faces(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
+def _file_detail(row: sqlite3.Row) -> dict:
+    detail = dict(row)
+    metadata_json = detail.pop("metadata_json")
+    detail["metadata"] = json.loads(metadata_json) if metadata_json else None
+    detail["activation_state"] = detail["activation_state"] or "available"
+    return detail
+
+
 def get_family_detail(
     conn: sqlite3.Connection, family_name: str, platform_name: str | None = None
 ) -> dict | None:
@@ -55,7 +65,8 @@ def get_family_detail(
             """
             SELECT font_files.path, font_files.filename, font_files.format,
                    font_files.content_hash, font_files.source, font_files.version,
-                   font_files.license, font_files.glyph_count, activations.state AS activation_state,
+                   font_files.license, font_files.glyph_count, font_files.metadata_json,
+                   activations.state AS activation_state,
                    activations.expires_at
             FROM font_files
             LEFT JOIN activations
@@ -71,10 +82,7 @@ def get_family_detail(
                 "weight": face["weight"],
                 "width": face["width"],
                 "is_variable": bool(face["is_variable"]),
-                "files": [
-                    {**dict(f), "activation_state": f["activation_state"] or "available"}
-                    for f in files
-                ],
+                "files": [_file_detail(f) for f in files],
             }
         )
 

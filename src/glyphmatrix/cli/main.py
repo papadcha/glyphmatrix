@@ -138,6 +138,26 @@ def list_fonts(ctx: click.Context, as_json: bool) -> None:
         )
 
 
+def _metadata_lines(metadata: dict | None) -> list[str]:
+    """Human-readable lines for format-specific extras (FON, TTC/OTC)."""
+    if not metadata:
+        return []
+    lines = []
+    if metadata.get("copyright_years"):
+        lines.append("copyright: " + ", ".join(str(y) for y in metadata["copyright_years"]))
+    if metadata.get("description"):
+        lines.append(f"description: {metadata['description']}")
+    if metadata.get("pixel_sizes"):
+        lines.append("bitmap sizes: " + ", ".join(metadata["pixel_sizes"]) + " px")
+    if metadata.get("charset"):
+        lines.append(f"charset: {metadata['charset']}")
+    for member in metadata.get("collection", []):
+        lines.append(
+            f"collection #{member['index']}: {member['family']} {member['style'] or ''}".rstrip()
+        )
+    return lines
+
+
 @fontctl.command()
 @click.argument("family")
 @click.option("--json", "as_json", is_flag=True)
@@ -171,6 +191,8 @@ def info(ctx: click.Context, family: str, as_json: bool) -> None:
                 f"glyphs={f['glyph_count']}  source={f['source']}  hash={f['content_hash'][:12]}  "
                 f"license={license_category}  [{f['activation_state']}]{expiry}"
             )
+            for line in _metadata_lines(f["metadata"]):
+                click.echo(f"      {line}")
 
 
 @fontctl.command()

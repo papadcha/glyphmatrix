@@ -60,6 +60,10 @@ def _flag_unsupported_format(conn: sqlite3.Connection, font_file_id: int, fmt: s
         )
 
 
+def _metadata_json(parsed: ParsedFont) -> str | None:
+    return json.dumps(parsed.metadata, ensure_ascii=False) if parsed.metadata else None
+
+
 def ingest_font_file(
     conn: sqlite3.Connection, font_face_id: int, parsed: ParsedFont, source: str = "user"
 ) -> tuple[int, str]:
@@ -76,7 +80,7 @@ def ingest_font_file(
         font_file_id = existing["id"]
         conn.execute(
             "UPDATE font_files SET font_face_id=?, filename=?, format=?, content_hash=?, "
-            "version=?, license=?, glyph_count=? WHERE id=?",
+            "version=?, license=?, glyph_count=?, metadata_json=? WHERE id=?",
             (
                 font_face_id,
                 parsed.filename,
@@ -85,6 +89,7 @@ def ingest_font_file(
                 parsed.version,
                 parsed.license,
                 parsed.glyph_count,
+                _metadata_json(parsed),
                 font_file_id,
             ),
         )
@@ -93,7 +98,8 @@ def ingest_font_file(
     else:
         cur = conn.execute(
             "INSERT INTO font_files (font_face_id, path, filename, format, content_hash, "
-            "source, version, license, glyph_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "source, version, license, glyph_count, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 font_face_id,
                 str(parsed.path),
@@ -104,6 +110,7 @@ def ingest_font_file(
                 parsed.version,
                 parsed.license,
                 parsed.glyph_count,
+                _metadata_json(parsed),
             ),
         )
         font_file_id = cur.lastrowid

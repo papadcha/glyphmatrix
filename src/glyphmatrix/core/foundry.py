@@ -95,3 +95,12 @@ def resolve_foundry(
     if holder:
         return holder, "copyright"
     return None, None
+
+
+def copyright_years(copyright_text: str | None) -> list[int]:
+    """Every distinct four-digit year (1970-2099) in a copyright string, sorted.
+    Ranges like "1990-1992" give both ends, not the years in between."""
+    if not copyright_text:
+        return []
+    years = {int(y) for y in re.findall(r"(?<!\d)((?:19[7-9]|20\d)\d)(?!\d)", copyright_text)}
+    return sorted(years)
