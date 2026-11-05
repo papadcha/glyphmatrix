@@ -113,6 +113,27 @@ def version_label(version: str | None, copyright_text: str | None) -> tuple[str,
     return NO_VERSION, False
 
 
+CASE_MODES = ("as-is", "sentence", "title", "lower")
+
+
+def apply_case(text: str, mode: str) -> str:
+    """Re-case a name regardless of how the font spells it.
+    sentence: "2Peas Sweet Pea Regular" -> "2peas sweet pea regular",
+              "KH Dot Hibiya 24" -> "Kh dot hibiya 24"
+    title:    "MOonbeams Regular" -> "Moonbeams Regular"
+    """
+    if mode == "as-is":
+        return text
+    lowered = text.lower()
+    if mode == "lower":
+        return lowered
+    if mode == "sentence":
+        return lowered[:1].upper() + lowered[1:]
+    if mode == "title":
+        return " ".join(word[:1].upper() + word[1:] for word in lowered.split(" "))
+    raise ValueError(f"unknown case mode: {mode!r} (expected one of {', '.join(CASE_MODES)})")
+
+
 def _safe(part: str) -> str:
     part = re.sub(r"\s+", " ", _UNSAFE_CHARS.sub("-", part))
     return part.strip(" .") or "Untitled"
@@ -185,15 +206,20 @@ def plan_organize(
     dest: str | Path | None = None,
     vendor: str | None = None,
     vendor_aliases: dict[str, str] | None = None,
+    case: str = "as-is",
 ) -> list[PlannedMove]:
     """vendor: put every font under this vendor (a folder from one publisher).
+    case: file-name casing — 'as-is' (as written in the font), 'sentence',
+    'title' or 'lower'. Folders keep the font's own spelling.
     vendor_aliases: {"Two Peas": "Two Peas in a Bucket", "Unknown": "..."} —
     matched case-insensitively against the resolved vendor."""
     source = Path(source)
     dest = Path(dest) if dest is not None else source
     plan: list[PlannedMove] = []
     by_hash: dict[str, PlannedMove] = {}
-    taken: set[Path] = set()
+    # Compared case-insensitively: macOS and Windows file systems are, so
+    # "Foo Regular" and "FOO Regular" would land on the same file.
+    taken: set[str] = set()
     pending: list[PlannedMove] = []
 
     for path in sorted(scan_directory(source)):
@@ -242,16 +268,18 @@ def plan_organize(
             item.family, item.style = groups[(item.vendor, item.family)]
 
         folder = dest / _safe(item.vendor) / _safe(item.family) / _safe(item.version_label)
-        stem = _safe(f"{item.family} {item.style}")
+        stem = _safe(apply_case(f"{item.family} {item.style}", case))
         ext = item.source.suffix.lower()
         target = folder / f"{stem}{ext}"
         counter = 2
-        while target in taken or (target.exists() and target.resolve() != item.source.resolve()):
+        while str(target).casefold() in taken or (
+            target.exists() and target.resolve() != item.source.resolve()
+        ):
             target = folder / f"{stem} ({counter}){ext}"
             counter += 1
         if counter > 2:
             item.flags.append("name already taken; numbered")
-        taken.add(target)
+        taken.add(str(target).casefold())
         item.destination = target
         if target.resolve() == item.source.resolve():
             item.action = "unchanged"

@@ -274,3 +274,43 @@ def test_version_label_ignores_numbers_glued_to_words():
     assert version_label("2peas Sweet Pea", "Typeface © Melissa Baxter, 2002.") == ("©2002", True)
     assert version_label("Version 2", None) == ("v2", False)
     assert version_label("Version 2; 2009", None) == ("v2", False)
+
+
+def test_apply_case_modes():
+    from glyphmatrix.core.organize import apply_case
+
+    assert apply_case("2Peas Sweet Pea Regular", "as-is") == "2Peas Sweet Pea Regular"
+    assert apply_case("2Peas Sweet Pea Regular", "sentence") == "2peas sweet pea regular"
+    assert apply_case("KH Dot Hibiya 24", "sentence") == "Kh dot hibiya 24"
+    assert apply_case("MOonbeams Regular", "title") == "Moonbeams Regular"
+    assert apply_case("Arimo Bold", "lower") == "arimo bold"
+
+
+def test_case_applies_to_file_name_only(tmp_path):
+    root = tmp_path / "fonts"
+    root.mkdir()
+    build_test_font(root / "a.ttf", family="PEArennial", manufacturer="X", version="Version 1.00")
+
+    item = plan_organize(root, case="sentence")[0]
+
+    assert item.destination == root / "X/PEArennial/v1.00/Pearennial regular.ttf"
+
+
+def test_cli_case_option(tmp_path):
+    root = _messy_folder(tmp_path / "fonts")
+
+    result = CliRunner().invoke(fontctl, ["--db", str(tmp_path / "x.db"), "organize", str(root),
+                                          "--case", "sentence"])
+
+    assert "-> Monotype/Arimo/v1.23/Arimo bold.ttf" in result.output
+
+
+def test_names_equal_after_recasing_do_not_collide(tmp_path):
+    root = tmp_path / "fonts"
+    root.mkdir()
+    build_test_font(root / "a.ttf", family="Foo", manufacturer="X", version="Version 1.00")
+    build_test_font(root / "b.ttf", family="FOO", manufacturer="X", version="Version 1.00", extra_glyph=True)
+
+    names = sorted(p.destination.name for p in plan_organize(root, case="sentence"))
+
+    assert names == ["Foo regular (2).ttf", "Foo regular.ttf"]

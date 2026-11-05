@@ -46,7 +46,7 @@ from glyphmatrix.core.glyph_inspector import find_glyphs, glyph_summary
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.language_coverage import check_script, script_breakdown
 from glyphmatrix.core.opentype_features import list_features
-from glyphmatrix.core.organize import apply_organize, plan_organize, undo_organize
+from glyphmatrix.core.organize import CASE_MODES, apply_organize, plan_organize, undo_organize
 from glyphmatrix.core.licenses import classify_license, list_license_conflicts
 from glyphmatrix.core.packages import (
     add_document,
@@ -137,6 +137,8 @@ def _rel(path: Path, root: Path) -> str:
 @click.option("--vendor-alias", "vendor_aliases", multiple=True, metavar="OLD=NEW",
               help="Rename a resolved vendor, e.g. 'Two Peas=Two Peas in a Bucket' or "
                    "'Unknown=Acme'. Repeatable; case-insensitive.")
+@click.option("--case", "case", type=click.Choice(CASE_MODES), default="as-is", show_default=True,
+              help="File-name casing: as written in the font, or sentence/title/lower case.")
 @click.option("--json", "as_json", is_flag=True)
 @click.pass_context
 def organize(
@@ -146,6 +148,7 @@ def organize(
     do_apply: bool,
     vendor: str | None,
     vendor_aliases: tuple[str, ...],
+    case: str,
     as_json: bool,
 ) -> None:
     """Arrange fonts as Vendor/Family/Version/Family Style.ext.
@@ -161,7 +164,7 @@ def organize(
         aliases[old] = new
     source_path = Path(source)
     dest_path = Path(dest) if dest else source_path
-    plan = plan_organize(source_path, dest_path, vendor=vendor, vendor_aliases=aliases)
+    plan = plan_organize(source_path, dest_path, vendor=vendor, vendor_aliases=aliases, case=case)
 
     if do_apply:
         result = apply_organize(plan, source_path, dest_path, conn=_existing_db(ctx))
