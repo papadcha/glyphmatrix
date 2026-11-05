@@ -259,3 +259,11 @@ def test_cli_vendor_alias_validation(tmp_path):
 
     assert bad.exit_code != 0
     assert "OLD=NEW" in bad.output
+
+
+def test_repeated_spaces_collapse_in_paths(tmp_path):
+    root = tmp_path / "fonts"
+    root.mkdir()
+    build_test_font(root / "a.ttf", family="2Peas Blocks  Circles", manufacturer="X", version="Version 1.00")
+
+    assert plan_organize(root)[0].destination == root / "X/2Peas Blocks Circles/v1.00/2Peas Blocks Circles Regular.ttf"

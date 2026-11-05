@@ -113,7 +113,8 @@ def version_label(version: str | None, copyright_text: str | None) -> tuple[str,
 
 
 def _safe(part: str) -> str:
-    return _UNSAFE_CHARS.sub("-", part).strip(" .") or "Untitled"
+    part = re.sub(r"\s+", " ", _UNSAFE_CHARS.sub("-", part))
+    return part.strip(" .") or "Untitled"
 
 
 def _sha256(path: Path) -> str:
