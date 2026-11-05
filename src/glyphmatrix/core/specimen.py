@@ -27,6 +27,9 @@ HEADING_H = 96
 LABEL_SIZE = 22
 SAMPLE_MAX = 58
 SAMPLE_MIN = 20
+# Symbol/dingbat rows show the font's own pictures: keep them big enough to
+# see and drop pictures from the end instead of shrinking further.
+OWN_CHARS_MIN = 44
 
 _INK = 17
 _LABEL = 100
@@ -131,8 +134,8 @@ def collect(root: str | Path, sample_text: str = DEFAULT_SAMPLE) -> list[Specime
     return entries
 
 
-def _fit_font(path: Path, text: str, width: int, encoding: str = ""):
-    """(font, text) sized to fit the width: shrink down to SAMPLE_MIN, then
+def _fit_font(path: Path, text: str, width: int, encoding: str = "", min_size: int = SAMPLE_MIN):
+    """(font, text) sized to fit the width: shrink down to min_size, then
     drop characters from the end. (None, text) if FreeType can't open it."""
     size = SAMPLE_MAX
     while True:
@@ -140,7 +143,7 @@ def _fit_font(path: Path, text: str, width: int, encoding: str = ""):
             font = ImageFont.truetype(str(path), size, encoding=encoding)
         except OSError:
             return None, text
-        if font.getlength(text) <= width or size <= SAMPLE_MIN:
+        if font.getlength(text) <= width or size <= min_size:
             break
         size -= 4
     return font, _clip(text, font, width)
@@ -192,7 +195,12 @@ def render(entries: list[SpecimenEntry], output: str | Path, title: str) -> tupl
         draw.text((MARGIN, y), _clip(entry.label, label_font, content_w), font=label_font, fill=_LABEL)
         sample_top = y + 34
         font, sample = (
-            _fit_font(entry.path, entry.sample, content_w, entry.encoding) if entry.sample else (None, "")
+            _fit_font(
+                entry.path, entry.sample, content_w, entry.encoding,
+                OWN_CHARS_MIN if entry.note else SAMPLE_MIN,
+            )
+            if entry.sample
+            else (None, "")
         )
         if font is not None:
             try:
