@@ -92,3 +92,54 @@ def test_ingest_stores_metadata_and_info_shows_it(tmp_path):
 
     result = CliRunner().invoke(fontctl, ["--db", str(db), "info", "Test Sans"])
     assert "collection #1: Test Sans Bold" in result.output
+
+
+def test_version_from_unique_id_when_name_version_has_no_number(tmp_path):
+    font_path = build_test_font(
+        tmp_path / "test.ttf",
+        version="Glyph Systems 5-April-96",
+        unique_id="2.000;Glyf;AZ Topaz;2018;TR4-4.0.1.5095",
+        font_revision=2.0,
+    )
+
+    parsed = parse_font_file(font_path)
+
+    assert parsed.version == "2.000"
+    assert parsed.metadata == {
+        "version_string": "Glyph Systems 5-April-96",
+        "version_source": "unique_id+head",
+    }
+
+
+def test_version_fallback_needs_head_to_agree(tmp_path):
+    font_path = build_test_font(
+        tmp_path / "test.ttf",
+        version="Converted by some tool",
+        unique_id="2.000;Vend;Name",
+        font_revision=1.0,
+    )
+
+    parsed = parse_font_file(font_path)
+
+    assert parsed.version == "Converted by some tool"
+    assert parsed.metadata is None
+
+
+def test_version_fallback_ignores_tool_unique_ids(tmp_path):
+    # FontForge writes "FontForge 2.0 : Name : date" and head 1.0 by default.
+    font_path = build_test_font(
+        tmp_path / "test.ttf",
+        version="This is a protected webfont",
+        unique_id="FontForge 2.0 : Kharabeesh : 16-11-2011",
+        font_revision=1.0,
+    )
+
+    assert parse_font_file(font_path).version == "This is a protected webfont"
+
+
+def test_name_version_with_number_is_kept(tmp_path):
+    font_path = build_test_font(
+        tmp_path / "test.ttf", version="Version 1.23", unique_id="9.000;X;Y", font_revision=9.0
+    )
+
+    assert parse_font_file(font_path).version == "Version 1.23"

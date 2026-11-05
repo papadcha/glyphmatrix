@@ -143,6 +143,8 @@ def _metadata_lines(metadata: dict | None) -> list[str]:
     if not metadata:
         return []
     lines = []
+    if metadata.get("version_source"):
+        lines.append(f"version from unique ID + head (name table says: {metadata.get('version_string')})")
     if metadata.get("copyright_years"):
         lines.append("copyright: " + ", ".join(str(y) for y in metadata["copyright_years"]))
     if metadata.get("description"):

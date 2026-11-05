@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -604,6 +605,25 @@ def _collection_members(path: Path) -> list[dict]:
     return members
 
 
+_VERSION_NUMBER = re.compile(r"\d+\.\d+")
+_UNIQUE_ID_VERSION = re.compile(r"^\s*(?:Version\s*)?(\d+\.\d+)\s*;")
+
+
+def _fallback_version(font: TTFont, version: str | None) -> str | None:
+    """A version number for fonts whose nameID 5 has none (e.g. "Glyph Systems
+    5-April-96"). Taken from the unique ID (nameID 3, often "2.000;Vendor;Name")
+    only when head.fontRevision agrees, since either alone is unreliable:
+    font tools write 1.0 into head by default, and unique IDs are free-form."""
+    if version and _VERSION_NUMBER.search(version):
+        return None
+    match = _UNIQUE_ID_VERSION.match(font["name"].getDebugName(3) or "")
+    if match is None or "head" not in font:
+        return None
+    if abs(float(match.group(1)) - font["head"].fontRevision) > 0.001:
+        return None
+    return match.group(1)
+
+
 def _hash_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -667,6 +687,10 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         )
         style = name_table.getBestSubFamilyName()
         version = name_table.getDebugName(5)
+        fallback_version = _fallback_version(font, version)
+        if fallback_version is not None:
+            metadata = {**(metadata or {}), "version_string": version, "version_source": "unique_id+head"}
+            version = fallback_version
         license_desc = name_table.getDebugName(13)
 
         weight = None

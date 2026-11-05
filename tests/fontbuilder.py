@@ -21,6 +21,8 @@ def build_test_font(
     weight: int | None = None,
     vendor_id: str | None = None,
     copyright: str | None = None,
+    unique_id: str | None = None,
+    font_revision: float | None = None,
 ) -> Path:
     """Build a minimal valid TTF for parser tests: .notdef + A (square outline
     of a_glyph_size), optionally + B, mapped via cmap. extra_codepoints adds
@@ -75,6 +77,8 @@ def build_test_font(
         name_strings["manufacturer"] = manufacturer
     if copyright is not None:
         name_strings["copyright"] = copyright
+    if unique_id is not None:
+        name_strings["uniqueFontIdentifier"] = unique_id
     fb.setupNameTable(name_strings)
     os2_kwargs = {"sTypoAscender": 800, "sTypoDescender": -200, "usWinAscent": 800, "usWinDescent": 200}
     if family_class is not None:
@@ -85,6 +89,8 @@ def build_test_font(
         os2_kwargs["achVendID"] = vendor_id
     fb.setupOS2(**os2_kwargs)
     fb.setupPost()
+    if font_revision is not None:
+        fb.font["head"].fontRevision = font_revision
     if panose is not None:
         fields = (
             "bFamilyType", "bSerifStyle", "bWeight", "bProportion", "bContrast",
