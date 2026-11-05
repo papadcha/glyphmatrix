@@ -140,6 +140,9 @@ def _rel(path: Path, root: Path) -> str:
 @click.option("--case", "case", type=click.Choice(CASE_MODES), default="as-is", show_default=True,
               help="Casing of family folders and file names: as written in the font, or "
                    "sentence/title/lower case. Vendor folders are not re-cased.")
+@click.option("--no-family-grouping", "no_grouping", is_flag=True,
+              help="Don't merge fonts in one folder whose names extend each other "
+                   "('Flea Market' + 'Flea Market Block') into one family.")
 @click.option("--json", "as_json", is_flag=True)
 @click.pass_context
 def organize(
@@ -150,6 +153,7 @@ def organize(
     vendor: str | None,
     vendor_aliases: tuple[str, ...],
     case: str,
+    no_grouping: bool,
     as_json: bool,
 ) -> None:
     """Arrange fonts as Vendor/Family/Version/Family Style.ext.
@@ -165,7 +169,8 @@ def organize(
         aliases[old] = new
     source_path = Path(source)
     dest_path = Path(dest) if dest else source_path
-    plan = plan_organize(source_path, dest_path, vendor=vendor, vendor_aliases=aliases, case=case)
+    plan = plan_organize(source_path, dest_path, vendor=vendor, vendor_aliases=aliases, case=case,
+                        group_families=not no_grouping)
 
     if do_apply:
         result = apply_organize(plan, source_path, dest_path, conn=_existing_db(ctx))

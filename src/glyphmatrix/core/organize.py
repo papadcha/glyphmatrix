@@ -181,6 +181,44 @@ def _settle_vendors(items: list[PlannedMove], forced: str | None, aliases: dict[
         item.vendor = max(counts, key=lambda name: (counts[name], name))
 
 
+def _group_by_shared_name(items: list[PlannedMove]) -> None:
+    """Within one vendor and one source folder, a font whose family name starts
+    with another font's family name joins that family; the rest of its name
+    becomes its style: "2Peas Flea Market Block Irregular" next to
+    "2Peas Flea Market" -> family "2Peas Flea Market", style "Block Irregular".
+    Names equal except for case also merge. The source folder is the signal
+    that a publisher packaged them together, so unrelated fonts that merely
+    share a prefix elsewhere stay apart."""
+    folders: dict[tuple[str, Path], list[PlannedMove]] = {}
+    for item in items:
+        folders.setdefault((item.vendor.casefold(), item.source.parent), []).append(item)
+    for members in folders.values():
+        bases = sorted({m.family for m in members}, key=len)
+        if len(bases) < 2:
+            continue
+        for item in members:
+            folded = item.family.casefold()
+            base = next(
+                (b for b in bases
+                 if len(b) < len(item.family) and folded.startswith(b.casefold() + " ")),
+                None,
+            )
+            if base is None:
+                same = [b for b in bases if b.casefold() == folded]
+                if len(same) > 1 and item.family != same[0]:
+                    item.family = same[0]
+                    item.flags.append(f"grouped with {same[0]} (same folder)")
+                continue
+            extra = item.family[len(base):].strip()
+            style = item.style
+            if style.lower() == "regular" or style.lower() in extra.lower():
+                style = extra
+            else:
+                style = f"{extra} {style}"
+            item.family, item.style = base, style
+            item.flags.append(f"grouped with {base} (same folder)")
+
+
 def _size_groups(entries: list[tuple[str, str, str]]) -> dict[tuple[str, str], tuple[str, str]]:
     """For (vendor, family, style) entries, map size-suffixed families that share
     a base name within one vendor ("KH Dot Hibiya 24" + "KH Dot Hibiya 32") to
@@ -207,11 +245,14 @@ def plan_organize(
     vendor: str | None = None,
     vendor_aliases: dict[str, str] | None = None,
     case: str = "as-is",
+    group_families: bool = True,
 ) -> list[PlannedMove]:
     """vendor: put every font under this vendor (a folder from one publisher).
     case: casing of family folders and file names — 'as-is' (as written in
     the font), 'sentence', 'title' or 'lower'. Vendor folders keep their
     spelling (set them exactly with vendor / vendor_aliases).
+    group_families: treat fonts in one source folder whose name extends
+    another's ("Flea Market" + "Flea Market Block Regular") as one family.
     vendor_aliases: {"Two Peas": "Two Peas in a Bucket", "Unknown": "..."} —
     matched case-insensitively against the resolved vendor."""
     source = Path(source)
@@ -267,7 +308,10 @@ def plan_organize(
     for item in pending:
         if (item.vendor, item.family) in groups:
             item.family, item.style = groups[(item.vendor, item.family)]
+    if group_families:
+        _group_by_shared_name(pending)
 
+    for item in pending:
         folder = dest / _safe(item.vendor) / _safe(apply_case(item.family, case)) / _safe(item.version_label)
         stem = _safe(apply_case(f"{item.family} {item.style}", case))
         ext = item.source.suffix.lower()

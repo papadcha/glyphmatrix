@@ -315,3 +315,55 @@ def test_names_equal_after_recasing_do_not_collide(tmp_path):
     names = sorted(p.destination.name for p in plan_organize(root, case="sentence"))
 
     assert names == ["Foo regular (2).ttf", "Foo regular.ttf"]
+
+
+def _family_folder(root):
+    root.mkdir()
+    sub = root / "Flea Market"
+    sub.mkdir()
+    for i, name in enumerate(["2Peas Flea Market", "2Peas Flea Market Block Regular",
+                              "2Peas Flea Market Block Irregular"]):
+        build_test_font(sub / f"{name}.ttf", family=name, style=name, manufacturer="X",
+                        version="Version 1.00", a_glyph_size=500 + i)
+    other = root / "Vintage"
+    other.mkdir()
+    build_test_font(other / "v.ttf", family="2Peas Vintage", manufacturer="X", version="Version 1.00", a_glyph_size=601)
+    build_test_font(other / "d.ttf", family="2peas dreamland", manufacturer="X", version="Version 1.00", a_glyph_size=602)
+    return root
+
+
+def test_fonts_extending_a_name_in_one_folder_become_one_family(tmp_path):
+    root = _family_folder(tmp_path / "fonts")
+
+    targets = sorted(str(p.destination.relative_to(root)) for p in plan_organize(root))
+
+    assert targets == [
+        "X/2Peas Flea Market/v1.00/2Peas Flea Market Block Irregular.ttf",
+        "X/2Peas Flea Market/v1.00/2Peas Flea Market Block Regular.ttf",
+        "X/2Peas Flea Market/v1.00/2Peas Flea Market Regular.ttf",
+        "X/2Peas Vintage/v1.00/2Peas Vintage Regular.ttf",
+        "X/2peas dreamland/v1.00/2peas dreamland Regular.ttf",
+    ]
+
+
+def test_family_grouping_needs_the_same_source_folder(tmp_path):
+    root = tmp_path / "fonts"
+    (root / "a").mkdir(parents=True)
+    (root / "b").mkdir()
+    build_test_font(root / "a/x.ttf", family="Silly", manufacturer="X", version="Version 1.00")
+    build_test_font(root / "b/y.ttf", family="Silly Fill-In", manufacturer="X", version="Version 1.00", a_glyph_size=650)
+
+    families = sorted(p.family for p in plan_organize(root))
+
+    assert families == ["Silly", "Silly Fill-In"]
+
+
+def test_case_variants_of_one_name_merge_and_grouping_can_be_disabled(tmp_path):
+    root = tmp_path / "fonts"
+    (root / "Flower Girl").mkdir(parents=True)
+    build_test_font(root / "Flower Girl/a.ttf", family="2Peas Flower Girl", manufacturer="X", version="Version 1.00")
+    build_test_font(root / "Flower Girl/b.ttf", family="2Peas flower girl", manufacturer="X",
+                    version="Version 1.00", a_glyph_size=650)
+
+    assert {p.family for p in plan_organize(root)} == {"2Peas Flower Girl"}
+    assert {p.family for p in plan_organize(root, group_families=False)} == {"2Peas Flower Girl", "2Peas flower girl"}

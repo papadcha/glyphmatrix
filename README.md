@@ -68,6 +68,9 @@ asked. It arranges a folder as `Vendor/Family/Version/Family Style.ext`:
 - **Version**: `v1.23`; if the font has no version, `©1991` from the latest
   copyright year; otherwise `No Version`.
 - Size variants that share a name ("KH Dot Hibiya 24/32") share one folder.
+- Fonts in one source folder whose names extend each other ("Flea Market",
+  "Flea Market Block Regular") become one family; `--no-family-grouping` turns
+  this off.
 - `--case sentence|title|lower` re-cases family folders and file names;
   `--vendor` / `--vendor-alias` set vendor folders exactly.
 
