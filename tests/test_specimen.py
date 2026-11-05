@@ -58,3 +58,32 @@ def test_cli_specimen(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "4 fonts, 1 page)" in result.output
+
+
+def test_symbol_only_fonts_use_the_symbol_charmap(tmp_path):
+    from fontTools.ttLib import TTFont
+    from fontTools.ttLib.tables._c_m_a_p import cmap_format_4
+
+    root = tmp_path / "fonts"
+    root.mkdir()
+    path = build_test_font(root / "dings.ttf", family="Dings")
+    font = TTFont(path)
+    table = cmap_format_4(4)
+    table.platformID, table.platEncID, table.language = 3, 0, 0
+    table.cmap = {0xF041: "A"}
+    font["cmap"].tables = [table]
+    font.save(path)
+
+    entry = collect(root)[0]
+
+    assert (entry.sample, entry.encoding, entry.note) == ("\uf041", "symb", "symbol font")
+    _, fonts, _ = export_specimen(root, tmp_path / "out.pdf")
+    assert fonts == 1
+
+
+def test_top_level_fonts_get_no_heading(tmp_path):
+    root = tmp_path / "fonts"
+    (root / "Fam" / "v1.00").mkdir(parents=True)
+    build_test_font(root / "Fam" / "v1.00" / "a.ttf", extra_codepoints=LATIN)
+
+    assert collect(root)[0].group == ""

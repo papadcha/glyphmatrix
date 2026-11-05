@@ -54,6 +54,7 @@ class SpecimenEntry:
     group: str
     sample: str | None  # None: cannot be previewed
     note: str = ""
+    encoding: str = ""  # Pillow/FreeType charmap: "" (Unicode) or "symb" (MS Symbol)
 
 
 def _ui(size: int, bold: bool = False):
@@ -71,17 +72,17 @@ def _group_for(rel: Path) -> str:
     parts = rel.parts[:-1]
     if len(parts) >= 2 and _VERSION_DIR.match(parts[-1]):
         parts = parts[:-2]
-    return " / ".join(parts) or "."
+    return " / ".join(parts)
 
 
-def _describe(path: Path, sample_text: str) -> tuple[str, str | None, str]:
-    """(label, sample to draw or None, note)."""
+def _describe(path: Path, sample_text: str) -> tuple[str, str | None, str, str]:
+    """(label, sample to draw or None, note, FreeType encoding)."""
     if path.suffix.lower() not in {".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2"}:
-        return path.stem, None, f"no preview for {path.suffix.lower()} files"
+        return path.stem, None, f"no preview for {path.suffix.lower()} files", ""
     try:
         font = TTFont(path, lazy=True, fontNumber=0)
     except Exception as exc:
-        return path.stem, None, f"unreadable: {exc}"
+        return path.stem, None, f"unreadable: {exc}", ""
     with font:
         names = font["name"]
         family = (names.getBestFamilyName() or path.stem).strip()
@@ -89,16 +90,30 @@ def _describe(path: Path, sample_text: str) -> tuple[str, str | None, str]:
         if style.casefold() in (family.casefold(), "normal"):
             style = "Regular"
         cmap = font.getBestCmap() or {}
+        symbol = {}
+        if not cmap and "cmap" in font:
+            # Old dingbat fonts map their pictures only through the Microsoft
+            # Symbol charmap (3,0), at U+F020-F0FF.
+            for table in font["cmap"].tables:
+                if table.platformID == 3 and table.platEncID == 0:
+                    symbol.update(table.cmap)
     label = family if style == "Regular" else f"{family} {style}"
+    if symbol:
+        own = [chr(c) for c in sorted(symbol) if (c & 0xFF) > 0x20][:40]
+        return label, "".join(own) or None, "symbol font", "symb"
     wanted = [c for c in sample_text if not c.isspace()]
     covered = sum(1 for c in wanted if ord(c) in cmap)
     if wanted and covered / len(wanted) >= 0.6:
-        return label, sample_text, ""
-    # Symbol/dingbat or non-Latin font: show what it does contain.
-    own = [chr(c) for c in sorted(cmap) if c > 0x20 and chr(c).isprintable()][:40]
+        return label, sample_text, "", ""
+    # Dingbat or non-Latin font: show what it does contain (private-use
+    # pictures included).
+    own = [
+        chr(c) for c in sorted(cmap)
+        if c > 0x20 and (chr(c).isprintable() or 0xE000 <= c <= 0xF8FF)
+    ][:40]
     if not own:
-        return label, None, "no printable characters"
-    return label, "".join(own), "shows the font's own characters"
+        return label, None, "no printable characters", ""
+    return label, "".join(own), "shows the font's own characters", ""
 
 
 def collect(root: str | Path, sample_text: str = DEFAULT_SAMPLE) -> list[SpecimenEntry]:
@@ -109,22 +124,26 @@ def collect(root: str | Path, sample_text: str = DEFAULT_SAMPLE) -> list[Specime
     )
     entries = []
     for path in files:
-        label, sample, note = _describe(path, sample_text)
-        entries.append(SpecimenEntry(path, label, _group_for(path.relative_to(root)), sample, note))
+        label, sample, note, encoding = _describe(path, sample_text)
+        entries.append(
+            SpecimenEntry(path, label, _group_for(path.relative_to(root)), sample, note, encoding)
+        )
     return entries
 
 
-def _fit_font(path: Path, text: str, width: int):
+def _fit_font(path: Path, text: str, width: int, encoding: str = ""):
+    """(font, text) sized to fit the width: shrink down to SAMPLE_MIN, then
+    drop characters from the end. (None, text) if FreeType can't open it."""
     size = SAMPLE_MAX
-    while size >= SAMPLE_MIN:
+    while True:
         try:
-            font = ImageFont.truetype(str(path), size)
+            font = ImageFont.truetype(str(path), size, encoding=encoding)
         except OSError:
-            return None
-        if font.getlength(text) <= width:
-            return font
+            return None, text
+        if font.getlength(text) <= width or size <= SAMPLE_MIN:
+            break
         size -= 4
-    return ImageFont.truetype(str(path), SAMPLE_MIN)
+    return font, _clip(text, font, width)
 
 
 def _clip(text: str, font, width: int) -> str:
@@ -160,22 +179,24 @@ def render(entries: list[SpecimenEntry], output: str | Path, title: str) -> tupl
     new_page()
     for entry in entries:
         heading = entry.group != current_group
-        needed = ROW_H + (HEADING_H if heading else 0)
+        needed = ROW_H + (HEADING_H if heading and entry.group else 0)
         if y + needed > bottom:
             new_page()
             heading = True  # repeat the section name on a new page
-        if heading:
+        if heading and entry.group:
             y += 24
             draw.text((MARGIN, y), _clip(entry.group, heading_font, content_w), font=heading_font, fill=_INK)
             y += HEADING_H - 24
-            current_group = entry.group
+        current_group = entry.group
 
         draw.text((MARGIN, y), _clip(entry.label, label_font, content_w), font=label_font, fill=_LABEL)
         sample_top = y + 34
-        font = _fit_font(entry.path, entry.sample, content_w) if entry.sample else None
+        font, sample = (
+            _fit_font(entry.path, entry.sample, content_w, entry.encoding) if entry.sample else (None, "")
+        )
         if font is not None:
             try:
-                draw.text((MARGIN, sample_top), entry.sample, font=font, fill=_INK)
+                draw.text((MARGIN, sample_top), sample, font=font, fill=_INK)
             except Exception:
                 font = None
                 entry.note = entry.note or "could not draw this font"

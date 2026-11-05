@@ -205,9 +205,14 @@ def _group_by_shared_name(items: list[PlannedMove]) -> None:
             )
             if base is None:
                 same = [b for b in bases if b.casefold() == folded]
-                if len(same) > 1 and item.family != same[0]:
-                    item.family = same[0]
-                    item.flags.append(f"grouped with {same[0]} (same folder)")
+                if len(same) > 1:
+                    # Deterministic pick: the most used spelling, then the one
+                    # with more capitals ("Flower Girl" over "flower girl").
+                    uses = {b: sum(1 for m in members if m.family == b) for b in same}
+                    chosen = min(same, key=lambda b: (-uses[b], -sum(c.isupper() for c in b), b))
+                    if item.family != chosen:
+                        item.family = chosen
+                        item.flags.append(f"grouped with {chosen} (same folder)")
                 continue
             extra = item.family[len(base):].strip()
             style = item.style
