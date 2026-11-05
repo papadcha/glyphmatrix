@@ -267,3 +267,10 @@ def test_repeated_spaces_collapse_in_paths(tmp_path):
     build_test_font(root / "a.ttf", family="2Peas Blocks  Circles", manufacturer="X", version="Version 1.00")
 
     assert plan_organize(root)[0].destination == root / "X/2Peas Blocks Circles/v1.00/2Peas Blocks Circles Regular.ttf"
+
+
+def test_version_label_ignores_numbers_glued_to_words():
+    assert version_label("2peas Sweet Pea", None) == ("No Version", False)
+    assert version_label("2peas Sweet Pea", "Typeface © Melissa Baxter, 2002.") == ("©2002", True)
+    assert version_label("Version 2", None) == ("v2", False)
+    assert version_label("Version 2; 2009", None) == ("v2", False)

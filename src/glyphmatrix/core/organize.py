@@ -51,7 +51,8 @@ _COMPANY_SUFFIX = re.compile(
     r"s\.a|limited partnership)\.?$",
     re.IGNORECASE,
 )
-_VERSION_NUMBER = re.compile(r"^\s*(?:version\s*)?(\d+(?:\.\d+)?)", re.IGNORECASE)
+# The number must stand alone: "2peas Sweet Pea" is a name, not version 2.
+_VERSION_NUMBER = re.compile(r"^\s*(?:version\s*)?(\d+\.\d+|\d+(?![\w.]))", re.IGNORECASE)
 _UNSAFE_CHARS = re.compile(r'[/\\:*?"<>|\x00-\x1f]')
 _COPYRIGHT_MARKS = re.compile(r"copyright|copr\.?|\(c\)|©|portions", re.IGNORECASE)
 # "Copyright (c)", "(C)Copyright", "Copyright Copr." are one claim, not two.
