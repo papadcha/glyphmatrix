@@ -37,7 +37,7 @@ from glyphmatrix.core.collections import (
     list_collections,
     remove_face_from_collection,
 )
-from glyphmatrix.core.compare import compare_font_files
+from glyphmatrix.core.compare import compare_font_files, compare_paths
 from glyphmatrix.core.conflicts import list_conflicts
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
@@ -362,6 +362,11 @@ def compare(
             f"no {family} {style} with version '{missing}'. Available versions: {available_str}"
         )
 
+    if file_a["id"] == file_b["id"]:
+        raise click.ClickException(
+            f"both versions resolve to the same file ({file_a['path']}). If two files share "
+            f"family, style and version, compare them directly: fontctl compare-files A B"
+        )
     diff = compare_font_files(conn, file_a["id"], file_b["id"])
 
     if as_json:
@@ -386,6 +391,38 @@ def compare(
     click.echo(f"  only in {version_b} ({len(diff.only_in_b)}): {_format_glyph_list(diff.only_in_b)}")
     click.echo(f"  changed outline ({len(diff.changed)}): {_format_glyph_list(diff.changed)}")
     click.echo(f"  unchanged: {diff.unchanged_count}")
+
+
+@fontctl.command(name="compare-files")
+@click.argument("file_a", type=click.Path(exists=True, dir_okay=False))
+@click.argument("file_b", type=click.Path(exists=True, dir_okay=False))
+@click.option("--json", "as_json", is_flag=True)
+def compare_files_cmd(file_a: str, file_b: str, as_json: bool) -> None:
+    """Compare two font files directly: metadata and glyph outlines."""
+    result = compare_paths(file_a, file_b)
+    glyphs = result.glyphs
+    if as_json:
+        click.echo(json.dumps({
+            "identical": result.identical,
+            "fields": {k: list(v) for k, v in result.fields.items()},
+            "sizes": list(result.sizes),
+            "only_in_a": glyphs.only_in_a,
+            "only_in_b": glyphs.only_in_b,
+            "changed": glyphs.changed,
+            "unchanged_count": glyphs.unchanged_count,
+        }, ensure_ascii=False))
+        return
+    click.echo(f"A: {file_a}  ({result.sizes[0]:,} bytes)")
+    click.echo(f"B: {file_b}  ({result.sizes[1]:,} bytes)")
+    if result.identical:
+        click.echo("identical: byte-for-byte the same file")
+        return
+    for name, (a, b) in result.fields.items():
+        click.echo(f"  {name}: {a!r}  vs  {b!r}")
+    click.echo(f"  only in A ({len(glyphs.only_in_a)}): {_format_glyph_list(glyphs.only_in_a)}")
+    click.echo(f"  only in B ({len(glyphs.only_in_b)}): {_format_glyph_list(glyphs.only_in_b)}")
+    click.echo(f"  changed outline ({len(glyphs.changed)}): {_format_glyph_list(glyphs.changed)}")
+    click.echo(f"  unchanged: {glyphs.unchanged_count}")
 
 
 @fontctl.command()

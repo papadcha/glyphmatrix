@@ -33,6 +33,7 @@ fontctl organize-undo <undo-log.csv>
 fontctl list
 fontctl info <family>
 fontctl compare <family> <style> <version_a> <version_b>
+fontctl compare-files <file_a> <file_b>
 fontctl validate
 fontctl duplicates
 fontctl project set <directory> <collection>
