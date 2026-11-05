@@ -68,6 +68,8 @@ asked. It arranges a folder as `Vendor/Family/Version/Family Style.ext`:
 - **Version**: `v1.23`; if the font has no version, `©1991` from the latest
   copyright year; otherwise `No Version`.
 - Size variants that share a name ("KH Dot Hibiya 24/32") share one folder.
+- `--case sentence|title|lower` re-cases family folders and file names;
+  `--vendor` / `--vendor-alias` set vendor folders exactly.
 
 It is a dry run unless `--apply` is given. Moves are copy → verify sha256 →
 delete original; identical duplicates are reported and left alone; anything

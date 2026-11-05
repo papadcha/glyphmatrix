@@ -209,8 +209,9 @@ def plan_organize(
     case: str = "as-is",
 ) -> list[PlannedMove]:
     """vendor: put every font under this vendor (a folder from one publisher).
-    case: file-name casing — 'as-is' (as written in the font), 'sentence',
-    'title' or 'lower'. Folders keep the font's own spelling.
+    case: casing of family folders and file names — 'as-is' (as written in
+    the font), 'sentence', 'title' or 'lower'. Vendor folders keep their
+    spelling (set them exactly with vendor / vendor_aliases).
     vendor_aliases: {"Two Peas": "Two Peas in a Bucket", "Unknown": "..."} —
     matched case-insensitively against the resolved vendor."""
     source = Path(source)
@@ -267,7 +268,7 @@ def plan_organize(
         if (item.vendor, item.family) in groups:
             item.family, item.style = groups[(item.vendor, item.family)]
 
-        folder = dest / _safe(item.vendor) / _safe(item.family) / _safe(item.version_label)
+        folder = dest / _safe(item.vendor) / _safe(apply_case(item.family, case)) / _safe(item.version_label)
         stem = _safe(apply_case(f"{item.family} {item.style}", case))
         ext = item.source.suffix.lower()
         target = folder / f"{stem}{ext}"

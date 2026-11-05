@@ -138,7 +138,8 @@ def _rel(path: Path, root: Path) -> str:
               help="Rename a resolved vendor, e.g. 'Two Peas=Two Peas in a Bucket' or "
                    "'Unknown=Acme'. Repeatable; case-insensitive.")
 @click.option("--case", "case", type=click.Choice(CASE_MODES), default="as-is", show_default=True,
-              help="File-name casing: as written in the font, or sentence/title/lower case.")
+              help="Casing of family folders and file names: as written in the font, or "
+                   "sentence/title/lower case. Vendor folders are not re-cased.")
 @click.option("--json", "as_json", is_flag=True)
 @click.pass_context
 def organize(

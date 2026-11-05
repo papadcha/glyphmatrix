@@ -286,14 +286,14 @@ def test_apply_case_modes():
     assert apply_case("Arimo Bold", "lower") == "arimo bold"
 
 
-def test_case_applies_to_file_name_only(tmp_path):
+def test_case_applies_to_family_folder_and_file_name(tmp_path):
     root = tmp_path / "fonts"
     root.mkdir()
     build_test_font(root / "a.ttf", family="PEArennial", manufacturer="X", version="Version 1.00")
 
     item = plan_organize(root, case="sentence")[0]
 
-    assert item.destination == root / "X/PEArennial/v1.00/Pearennial regular.ttf"
+    assert item.destination == root / "X/Pearennial/v1.00/Pearennial regular.ttf"
 
 
 def test_cli_case_option(tmp_path):
@@ -303,6 +303,7 @@ def test_cli_case_option(tmp_path):
                                           "--case", "sentence"])
 
     assert "-> Monotype/Arimo/v1.23/Arimo bold.ttf" in result.output
+    assert "-> Glyph Systems/Andalus/v5.92/Andalus regular.ttf" in result.output
 
 
 def test_names_equal_after_recasing_do_not_collide(tmp_path):
