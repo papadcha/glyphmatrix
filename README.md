@@ -30,6 +30,7 @@ docs/           proposal.md
 fontctl scan <directory>
 fontctl organize <directory> [--dest DIR] [--apply]
 fontctl organize-undo <undo-log.csv>
+fontctl inventory <directory> <output.csv> [--vendor NAME]
 fontctl list
 fontctl info <family>
 fontctl compare <family> <style> <version_a> <version_b>

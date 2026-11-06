@@ -46,7 +46,13 @@ from glyphmatrix.core.glyph_inspector import find_glyphs, glyph_summary
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.language_coverage import check_script, script_breakdown
 from glyphmatrix.core.opentype_features import list_features
-from glyphmatrix.core.organize import CASE_MODES, apply_organize, plan_organize, undo_organize
+from glyphmatrix.core.organize import (
+    CASE_MODES,
+    apply_organize,
+    plan_organize,
+    undo_organize,
+    write_inventory,
+)
 from glyphmatrix.core.licenses import classify_license, list_license_conflicts
 from glyphmatrix.core.packages import (
     add_document,
@@ -239,6 +245,19 @@ def specimen(directory: str, output: str, text: str, title: str | None) -> None:
     except ValueError as exc:
         raise click.ClickException(str(exc))
     click.echo(f"wrote {path}  ({fonts} fonts, {pages} page{'' if pages == 1 else 's'})")
+
+
+@fontctl.command()
+@click.argument("directory", type=click.Path(exists=True, file_okay=False))
+@click.argument("output", metavar="OUTPUT.csv", type=click.Path(dir_okay=False))
+@click.option("--vendor", default=None, help="Write this vendor for every font (single-publisher folder).")
+def inventory(directory: str, output: str, vendor: str | None) -> None:
+    """Write a CSV catalog of DIRECTORY as it is — nothing is moved.
+
+    For folders arranged by hand (series folders etc.): re-run it after
+    adding fonts. Columns match organize's _Font Catalog.csv."""
+    path, count = write_inventory(directory, output, vendor=vendor)
+    click.echo(f"wrote {path}  ({count} fonts)")
 
 
 @fontctl.command(name="organize-undo")

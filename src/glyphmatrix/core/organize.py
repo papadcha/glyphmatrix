@@ -571,3 +571,52 @@ def undo_organize(log_path: str | Path, conn: sqlite3.Connection | None = None) 
     if conn is not None and back:
         _update_db_paths(conn, back)
     return restored, problems
+
+
+_INVENTORY_FIELDS = [f for f in _CATALOG_FIELDS if f not in ("Original path", "Review")] + ["Version folder"]
+
+
+def write_inventory(root: str | Path, output: str | Path, vendor: str | None = None) -> tuple[Path, int]:
+    """Catalog a folder as it is — nothing moves. Same columns as the organize
+    catalog, so a hand-arranged folder (series folders, renamed families) can
+    be re-catalogued after fonts are added. Returns (csv path, font count).
+
+    vendor: write this vendor for every font (a single-publisher folder);
+    otherwise the vendor resolved from each font's own data."""
+    root = Path(root)
+    rows = []
+    for path in sorted(scan_directory(root), key=lambda p: str(p).casefold()):
+        try:
+            parsed = parse_font_file(path)
+        except Exception as exc:
+            rows.append({"Path": str(path.relative_to(root)), "Format": path.suffix.lower().lstrip("."),
+                         "Family": f"(could not read: {exc})"})
+            continue
+        family = parsed.family_name.strip() or path.stem
+        style = (parsed.style or "Regular").strip()
+        if style.lower() in ("normal", family.lower()):
+            style = "Regular"
+        label, _ = version_label(parsed.version, parsed.copyright)
+        rows.append({
+            "Vendor": vendor or short_vendor(parsed.foundry),
+            "Vendor source": "set by --vendor" if vendor else (parsed.foundry_source or ""),
+            "Designer": parsed.designer or "",
+            "Family": family,
+            "Style": style,
+            "Version": parsed.version or "",
+            "Version folder": label,
+            "Format": parsed.format,
+            "Characters": parsed.glyph_count,
+            "Copyright years": ", ".join(str(y) for y in copyright_years(parsed.copyright)),
+            "Copyright": parsed.copyright or "",
+            "Path": str(path.relative_to(root)),
+        })
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    tmp = output.with_name(output.name + ".tmp")
+    with tmp.open("w", encoding="utf-8-sig", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=_INVENTORY_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    os.replace(tmp, output)
+    return output, len(rows)

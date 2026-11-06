@@ -399,3 +399,37 @@ def test_abbreviated_styles_join_their_family(tmp_path):
     assert targets["tee.ttf"] == "URW/AvantGarGotItcTEE/v1.005/AvantGarGotItcTEE Regular.ttf"
     assert targets["teemed.ttf"] == "URW/AvantGarGotItcTEE/v1.005/AvantGarGotItcTEE Medium.ttf"
     assert targets["l.ttf"] == "URW/AvantGarGotItcL/v1.005/AvantGarGotItcL Regular.ttf"
+
+
+def test_inventory_catalogs_without_moving(tmp_path):
+    from glyphmatrix.core.organize import write_inventory
+
+    root = tmp_path / "Two Peas in a Bucket"
+    series = root / "2Peas Blocks" / "2Peas Blocks - Baby" / "v1.00"
+    series.mkdir(parents=True)
+    build_test_font(series / "2Peas Blocks - Baby Regular.ttf", family="2Peas Blocks - Baby",
+                    style="2Peas Blocks - Baby", version="Version 1.00",
+                    copyright="Typeface © Melissa Baxter, 2002. All Rights Reserved")
+    before = sorted(str(p) for p in root.rglob("*"))
+
+    out, count = write_inventory(root, root / "2Peas Catalog.csv", vendor="Two Peas in a Bucket")
+
+    assert count == 1
+    assert sorted(str(p) for p in root.rglob("*") if p != out) == before
+    with out.open(encoding="utf-8-sig") as fh:
+        row = next(csv.DictReader(fh))
+    assert row["Vendor"] == "Two Peas in a Bucket"
+    assert row["Style"] == "Regular"
+    assert row["Version folder"] == "v1.00"
+    assert row["Copyright years"] == "2002"
+    assert row["Path"] == "2Peas Blocks/2Peas Blocks - Baby/v1.00/2Peas Blocks - Baby Regular.ttf"
+
+
+def test_cli_inventory(tmp_path):
+    root = _messy_folder(tmp_path / "fonts")
+
+    result = CliRunner().invoke(fontctl, ["inventory", str(root), str(tmp_path / "inv.csv")])
+
+    assert result.exit_code == 0, result.output
+    assert "(3 fonts)" in result.output
+    assert (root / "ARIMO-BOLD.TTF").exists()
