@@ -321,6 +321,41 @@ def _size_groups(entries: list[tuple[str, str, str]]) -> dict[tuple[str, str], t
     return groups
 
 
+class _ExistingFiles:
+    """Byte-identical lookup among font files already in the destination
+    (outside the source folder). Only files of the same size are hashed, and
+    only when asked, so a large library costs little. Names don't matter:
+    a file counts as already there only if its content is identical."""
+
+    def __init__(self, dest: Path, exclude: Path):
+        self._dest = dest
+        self._exclude = exclude.resolve()
+        self._by_size: dict[int, list[Path]] | None = None
+        self._hashes: dict[Path, str] = {}
+
+    def _index(self) -> dict[int, list[Path]]:
+        if self._by_size is None:
+            self._by_size = {}
+            if self._dest.exists():
+                for path in scan_directory(self._dest):
+                    resolved = path.resolve()
+                    if resolved == self._exclude or self._exclude in resolved.parents:
+                        continue
+                    self._by_size.setdefault(path.stat().st_size, []).append(path)
+        return self._by_size
+
+    def find(self, path: Path, content_hash: str) -> Path | None:
+        for candidate in self._index().get(path.stat().st_size, []):
+            if candidate not in self._hashes:
+                self._hashes[candidate] = _sha256(candidate)
+            if self._hashes[candidate] == content_hash:
+                try:
+                    return candidate.relative_to(self._dest)
+                except ValueError:
+                    return candidate
+        return None
+
+
 def plan_organize(
     source: str | Path,
     dest: str | Path | None = None,
@@ -345,6 +380,7 @@ def plan_organize(
     # "Foo Regular" and "FOO Regular" would land on the same file.
     taken: set[str] = set()
     pending: list[PlannedMove] = []
+    existing = _ExistingFiles(dest, exclude=source)
 
     for path in sorted(scan_directory(source)):
         try:
@@ -359,6 +395,15 @@ def plan_organize(
                 PlannedMove(
                     path, None, "duplicate", content_hash=parsed.content_hash,
                     flags=[f"identical to {original.source}"], parsed=parsed,
+                )
+            )
+            continue
+        already = existing.find(path, parsed.content_hash)
+        if already is not None:
+            plan.append(
+                PlannedMove(
+                    path, None, "duplicate", content_hash=parsed.content_hash,
+                    flags=[f"already in destination: {already}"], parsed=parsed,
                 )
             )
             continue

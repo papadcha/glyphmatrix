@@ -433,3 +433,34 @@ def test_cli_inventory(tmp_path):
     assert result.exit_code == 0, result.output
     assert "(3 fonts)" in result.output
     assert (root / "ARIMO-BOLD.TTF").exists()
+
+
+def test_identical_file_already_in_destination_is_a_duplicate(tmp_path):
+    lib = tmp_path / "library"
+    _messy_folder(tmp_path / "first")
+    apply_organize(plan_organize(tmp_path / "first", lib), tmp_path / "first", lib)
+    # Hand-arranged afterwards: moved into a series folder.
+    series = lib / "Monotype" / "Series"
+    series.mkdir()
+    shutil.move(str(lib / "Monotype/Arimo"), str(series / "Arimo"))
+
+    new = tmp_path / "new"
+    new.mkdir()
+    shutil.copy(series / "Arimo/v1.23/Arimo Bold.ttf", new / "copy of arimo.ttf")
+    # Same family, style and version but different content: not a duplicate.
+    build_test_font(new / "other arimo.ttf", family="Arimo", style="Bold",
+                    manufacturer="Monotype Imaging Inc.", version="Version 1.23", a_glyph_size=777)
+
+    plan = {p.source.name: p for p in plan_organize(new, lib)}
+
+    assert plan["copy of arimo.ttf"].action == "duplicate"
+    assert plan["copy of arimo.ttf"].flags == [
+        "already in destination: Monotype/Series/Arimo/v1.23/Arimo Bold.ttf"]
+    assert plan["other arimo.ttf"].action == "move"
+    assert plan["other arimo.ttf"].destination == lib / "Monotype/Arimo/v1.23/Arimo Bold.ttf"
+
+
+def test_in_place_organize_does_not_see_its_own_files_as_duplicates(tmp_path):
+    root = _messy_folder(tmp_path / "fonts")
+
+    assert {p.action for p in plan_organize(root)} == {"move"}
