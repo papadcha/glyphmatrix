@@ -468,14 +468,15 @@ def _move_verified(src: Path, dst: Path, expected_hash: str) -> None:
 
 
 def _prune_empty_dirs(start: Path, stop: Path) -> None:
-    """Remove now-empty folders (ignoring .DS_Store) from start up to stop."""
+    """Remove now-empty folders (ignoring .DS_Store and ._ AppleDouble files)
+    from start up to stop."""
     current = start.absolute()
     stop = stop.absolute()
     while current != stop and stop in current.parents:
         if not current.exists():  # already pruned for an earlier file
             current = current.parent
             continue
-        entries = [e for e in current.iterdir() if e.name != ".DS_Store"]
+        entries = [e for e in current.iterdir() if not (e.name == ".DS_Store" or e.name.startswith("._"))]
         if entries:
             return
         for leftover in current.iterdir():

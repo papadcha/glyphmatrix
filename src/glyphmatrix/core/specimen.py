@@ -15,6 +15,8 @@ from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
 
+from glyphmatrix.core.scanner import is_skipped
+
 FONT_SUFFIXES = {".ttf", ".otf", ".ttc", ".otc", ".fon", ".pfb", ".pfa", ".bdf", ".pcf", ".woff", ".woff2"}
 DEFAULT_SAMPLE = "The quick brown fox jumps over the lazy dog 0123456789"
 
@@ -164,7 +166,10 @@ def _describe(path: Path, sample_text: str) -> tuple[str, str | None, str, str]:
 def collect(root: str | Path, sample_text: str = DEFAULT_SAMPLE) -> list[SpecimenEntry]:
     root = Path(root)
     files = sorted(
-        (p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in FONT_SUFFIXES),
+        (
+            p for p in root.rglob("*")
+            if p.suffix.lower() in FONT_SUFFIXES and not is_skipped(p, root) and p.is_file()
+        ),
         key=lambda p: str(p.relative_to(root)).casefold(),
     )
     entries = []
