@@ -904,3 +904,22 @@ def test_failure_while_deleting_derived_data_rolls_everything_back(tmp_path):
     assert sorted(p.name for p in root.iterdir()) == names_before        # files are back
     assert sorted(tuple(r) for r in conn.execute("SELECT id, path FROM font_files")) == rows_before
     assert _count(conn, "font_glyphs", stale_id) == glyphs
+
+
+def test_size_grouping_keeps_the_style_of_non_regular_members(tmp_path):
+    root = tmp_path / "fonts"
+    root.mkdir()
+    for name, style, extra in (("KH Dot Hibiya 24", "Regular", False), ("KH Dot Hibiya 24", "Bold", True),
+                               ("KH Dot Hibiya 32", "Regular", False)):
+        build_test_font(root / f"{name} {style}.ttf", family=name, style=style, manufacturer="X",
+                        version="Version 1.00", extra_glyph=extra, a_glyph_size=500 + len(name) + len(style))
+
+    plan = plan_organize(root)
+
+    targets = sorted(str(p.destination.relative_to(root)) for p in plan)
+    assert targets == [
+        "X/KH Dot Hibiya/v1.00/KH Dot Hibiya 24 Bold.ttf",
+        "X/KH Dot Hibiya/v1.00/KH Dot Hibiya 24.ttf",
+        "X/KH Dot Hibiya/v1.00/KH Dot Hibiya 32.ttf",
+    ]
+    assert not any("name already taken" in f for p in plan for f in p.flags)

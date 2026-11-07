@@ -438,7 +438,10 @@ def plan_organize(
     groups = _size_groups([(i.vendor, i.family, i.style) for i in pending])
     for item in pending:
         if (item.vendor, item.family) in groups:
-            item.family, item.style = groups[(item.vendor, item.family)]
+            base, size = groups[(item.vendor, item.family)]
+            # the size takes the place of "Regular"; any other style keeps its name after it
+            style = size if item.style.lower() == "regular" else f"{size} {item.style}"
+            item.family, item.style = base, style
     if group_families:
         _group_by_shared_name(pending)
 
