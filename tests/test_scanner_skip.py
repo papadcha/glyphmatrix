@@ -23,3 +23,19 @@ def test_a_root_inside_a_hidden_folder_still_works(tmp_path):
     build_test_font(root / "Real.ttf")
 
     assert [p.name for p in scan_directory(root)] == ["Real.ttf"]
+
+
+def test_user_font_folders_below_the_root_are_not_skipped(tmp_path):
+    # scanning a home folder must find ~/.fonts and ~/.local/share/fonts ...
+    for rel in (".fonts/a.ttf", ".local/share/fonts/b.ttf", ".local/share/fonts/sub/c.otf", "normal/d.ttf"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_bytes(b"x")
+    # ... but not the rest of the hidden folders
+    for rel in (".local/share/Trash/e.ttf", ".local/other/f.ttf", ".cache/g.ttf", ".Trashes/h.ttf",
+                ".fonts/.hidden/i.ttf", ".fonts/.j.ttf"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_bytes(b"x")
+
+    found = sorted(p.relative_to(tmp_path).as_posix() for p in scan_directory(tmp_path))
+
+    assert found == [".fonts/a.ttf", ".local/share/fonts/b.ttf", ".local/share/fonts/sub/c.otf", "normal/d.ttf"]

@@ -19,17 +19,30 @@ FONT_EXTENSIONS = (
 _SKIP_DIRS = {"#recycle", "@recycle", "#snapshot", "@eadir", "@__thumb", ".@__thumb"}
 
 
+def _user_font_folder_at(parts: tuple[str, ...], i: int) -> bool:
+    """True if parts[i] is a hidden folder that legitimately holds fonts: Linux
+    ~/.fonts, and ~/.local when it leads to share/fonts (the rest of .local is
+    not font territory)."""
+    if parts[i] == ".fonts":
+        return True
+    return parts[i] == ".local" and tuple(p.casefold() for p in parts[i + 1:i + 3]) == ("share", "fonts")
+
+
 def is_skipped(path: Path, root: Path) -> bool:
     """Hidden files ("._Font.ttf" AppleDouble companions macOS writes on NAS
     and USB volumes, ".DS_Store") and anything inside a hidden or NAS-system
-    folder below root."""
+    folder below root, except the per-user font folders (.fonts and
+    .local/share/fonts), so that scanning a home folder finds them."""
     if path.name.startswith("."):
         return True
     try:
         parts = path.relative_to(root).parts[:-1]
     except ValueError:
         parts = path.parts[:-1]
-    return any(p.startswith(".") or p.casefold() in _SKIP_DIRS for p in parts)
+    return any(
+        (p.startswith(".") and not _user_font_folder_at(parts, i)) or p.casefold() in _SKIP_DIRS
+        for i, p in enumerate(parts)
+    )
 
 
 def scan_directory(root: str | Path) -> Iterator[Path]:
