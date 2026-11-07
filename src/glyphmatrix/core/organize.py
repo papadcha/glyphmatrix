@@ -68,7 +68,7 @@ _SIZE_SUFFIX = re.compile(r"^(.*\S)\s+(\d{1,3}(?:\s+[A-Za-z]{1,3})?)$")
 class PlannedMove:
     source: Path
     destination: Path | None  # None: left in place (duplicate or unreadable)
-    action: str  # 'move', 'unchanged', 'duplicate', 'error'
+    action: str  # 'move', 'unchanged', 'duplicate', 'active', 'error'
     vendor: str = ""
     family: str = ""
     style: str = ""
@@ -83,6 +83,7 @@ class OrganizeResult:
     moved: int = 0
     unchanged: int = 0
     duplicates: int = 0
+    skipped_active: int = 0  # left in place: activated in the library
     errors: int = 0
     undo_log: Path | None = None
     catalog: Path | None = None
@@ -360,6 +361,17 @@ class _ExistingFiles:
         return None
 
 
+def _is_active(conn: sqlite3.Connection, path: Path) -> bool:
+    """True if the library has this file activated on any platform (a DB can hold
+    rows from another system, so every platform counts)."""
+    file_id = _find_row_id(conn, path)
+    if file_id is None:
+        return False
+    return conn.execute(
+        "SELECT 1 FROM activations WHERE font_file_id = ? AND state = 'active' LIMIT 1", (file_id,)
+    ).fetchone() is not None
+
+
 def plan_organize(
     source: str | Path,
     dest: str | Path | None = None,
@@ -367,6 +379,7 @@ def plan_organize(
     vendor_aliases: dict[str, str] | None = None,
     case: str = "as-is",
     group_families: bool = True,
+    conn: sqlite3.Connection | None = None,
 ) -> list[PlannedMove]:
     """vendor: put every font under this vendor (a folder from one publisher).
     case: casing of family folders and file names — 'as-is' (as written in
@@ -375,7 +388,10 @@ def plan_organize(
     group_families: treat fonts in one source folder whose name extends
     another's ("Flea Market" + "Flea Market Block Regular") as one family.
     vendor_aliases: {"Two Peas": "Two Peas in a Bucket", "Unknown": "..."} —
-    matched case-insensitively against the resolved vendor."""
+    matched case-insensitively against the resolved vendor.
+    conn: the library DB, if there is one. A font it has activated is never
+    planned for a move (the system font folder holds a link to its current
+    path): it gets action 'active' and stays where it is."""
     source = Path(source)
     dest = Path(dest) if dest is not None else source
     plan: list[PlannedMove] = []
@@ -384,6 +400,7 @@ def plan_organize(
     # "Foo Regular" and "FOO Regular" would land on the same file.
     taken: set[str] = set()
     pending: list[PlannedMove] = []
+    active: set[int] = set()
     existing = _ExistingFiles(dest, exclude=source)
 
     for path in sorted(scan_directory(source)):
@@ -433,6 +450,8 @@ def plan_organize(
         by_hash[parsed.content_hash] = item
         pending.append(item)
         plan.append(item)
+        if conn is not None and _is_active(conn, path):
+            active.add(id(item))
 
     _settle_vendors(pending, vendor, vendor_aliases or {})
     groups = _size_groups([(i.vendor, i.family, i.style) for i in pending])
@@ -462,6 +481,11 @@ def plan_organize(
         item.destination = target
         if target.resolve() == item.source.resolve():
             item.action = "unchanged"
+        elif id(item) in active:
+            taken.discard(str(target).casefold())
+            item.destination = None
+            item.action = "active"
+            item.flags.append("active in the library: not moved, deactivate it first")
     return plan
 
 
@@ -657,6 +681,8 @@ def apply_organize(
                 result.errors += 1
             elif item.action == "unchanged":
                 result.unchanged += 1
+            elif item.action == "active":
+                result.skipped_active += 1
             else:
                 # copy -> verify -> record in the undo log (durably) -> only then delete
                 # the original, so a failure at any point never loses the file.

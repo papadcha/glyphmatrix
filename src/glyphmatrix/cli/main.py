@@ -179,11 +179,12 @@ def organize(
         aliases[old] = new
     source_path = Path(source)
     dest_path = Path(dest) if dest else source_path
+    library = _existing_db(ctx)
     plan = plan_organize(source_path, dest_path, vendor=vendor, vendor_aliases=aliases, case=case,
-                        group_families=not no_grouping)
+                        group_families=not no_grouping, conn=library)
 
     if do_apply:
-        result = apply_organize(plan, source_path, dest_path, conn=_existing_db(ctx))
+        result = apply_organize(plan, source_path, dest_path, conn=library)
 
     if as_json:
         payload = {
@@ -222,10 +223,12 @@ def organize(
         for flag in item.flags:
             click.echo(f"     ! {flag}")
 
-    counts = {a: sum(1 for i in plan if i.action == a) for a in ("move", "unchanged", "duplicate", "error")}
+    counts = {a: sum(1 for i in plan if i.action == a)
+              for a in ("move", "unchanged", "duplicate", "active", "error")}
     review = sum(1 for i in plan if i.flags and i.action == "move")
     click.echo(
-        f"\n{counts['move']} to move, {counts['unchanged']} already in place, "
+        f"\n{counts['move']} to move, {counts['active']} active (skipped, deactivate first), "
+        f"{counts['unchanged']} already in place, "
         f"{counts['duplicate']} duplicates, {counts['error']} unreadable, {review} to review"
     )
     if not do_apply:

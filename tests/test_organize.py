@@ -923,3 +923,73 @@ def test_size_grouping_keeps_the_style_of_non_regular_members(tmp_path):
         "X/KH Dot Hibiya/v1.00/KH Dot Hibiya 32.ttf",
     ]
     assert not any("name already taken" in f for p in plan for f in p.flags)
+
+
+# --- active fonts are never moved: the system font folder holds a link to the old path ---
+
+def _activated(tmp_path, state="active", platform="windows"):
+    root = tmp_path / "fonts"
+    _three_arimo(root)
+    conn = connect(tmp_path / "lib.db")
+    init_schema(conn)
+    ingest_directory(conn, root)
+    bold_id = conn.execute("SELECT id FROM font_files WHERE filename = 'arimo-Bold.ttf'").fetchone()[0]
+    conn.execute("INSERT INTO activations (font_file_id, platform, state) VALUES (?, ?, ?)",
+                 (bold_id, platform, state))
+    conn.commit()
+    return root, conn, bold_id
+
+
+def test_active_font_is_planned_as_active_and_left_alone(tmp_path):
+    root, conn, bold_id = _activated(tmp_path)
+
+    plan = plan_organize(root, conn=conn)
+    actions = {p.source.name: p.action for p in plan}
+    result = apply_organize(plan, root, conn=conn)
+
+    assert actions == {"arimo-Bold.ttf": "active", "arimo-Italic.ttf": "move", "arimo-Regular.ttf": "move"}
+    bold = next(p for p in plan if p.source.name == "arimo-Bold.ttf")
+    assert bold.destination is None and any("deactivate" in f for f in bold.flags)
+    assert (result.moved, result.skipped_active, result.errors) == (2, 1, 0)
+    assert (root / "arimo-Bold.ttf").exists()
+    assert conn.execute("SELECT path FROM font_files WHERE id = ?", (bold_id,)).fetchone()[0].endswith("arimo-Bold.ttf")
+    assert conn.execute("SELECT state FROM activations WHERE font_file_id = ?", (bold_id,)).fetchone()[0] == "active"
+
+
+def test_activation_on_any_platform_blocks_the_move(tmp_path):
+    root, conn, _ = _activated(tmp_path, platform="linux")
+
+    plan = plan_organize(root, conn=conn)
+
+    assert [p.action for p in plan if p.source.name == "arimo-Bold.ttf"] == ["active"]
+
+
+def test_installed_but_not_active_font_moves_normally(tmp_path):
+    root, conn, _ = _activated(tmp_path, state="installed")
+
+    result = apply_organize(plan_organize(root, conn=conn), root, conn=conn)
+
+    assert (result.moved, result.skipped_active) == (3, 0)
+
+
+def test_without_a_library_nothing_is_treated_as_active(tmp_path):
+    root, conn, _ = _activated(tmp_path)
+
+    assert {p.action for p in plan_organize(root)} == {"move"}
+
+
+def test_cli_reports_active_fonts_in_text_and_json(tmp_path):
+    root, conn, _ = _activated(tmp_path)
+    conn.close()
+    runner = CliRunner()
+    db = ["--db", str(tmp_path / "lib.db")]
+
+    dry = runner.invoke(fontctl, [*db, "organize", str(root)])
+    assert dry.exit_code == 0, dry.output
+    assert "2 to move, 1 active (skipped, deactivate first)" in dry.output
+    assert "[active]" in dry.output
+
+    applied = runner.invoke(fontctl, [*db, "organize", str(root), "--apply", "--json"])
+    assert applied.exit_code == 0, applied.output
+    result = json.loads(applied.stdout)["result"]
+    assert result["moved"] == 2 and result["skipped_active"] == 1
