@@ -524,14 +524,28 @@ def _find_row_id(conn: sqlite3.Connection, path: Path) -> int | None:
     return None
 
 
+# Tables that only hold data derived from the file itself (rebuilt by a rescan) ...
+_DERIVED_TABLES = ("font_glyphs", "validation_issues")
+# ... and tables that record something the user did; those block deleting a row.
+_USER_STATE_TABLES = ("activations", "package_files")
+
+
+def _has_user_state(conn: sqlite3.Connection, font_file_id: int) -> bool:
+    return any(
+        conn.execute(f"SELECT 1 FROM {table} WHERE font_file_id = ? LIMIT 1", (font_file_id,)).fetchone()
+        for table in _USER_STATE_TABLES
+    )
+
+
 def _update_db_paths(conn: sqlite3.Connection, moves: list[tuple[Path, Path]]) -> list[str]:
     """Point font_files rows at the new paths, all-or-nothing. Returns warnings.
 
     A different row already sitting on the new path can only describe a file
     that is no longer there (the move just put this one there), so it is
-    stale: it is deleted, or, when other tables still refer to it, left alone
-    and the moved row keeps its old path. Any other DB error rolls everything
-    back and is re-raised."""
+    stale. Its derived data (glyph fingerprints, validation issues) is
+    deleted with it; but if it carries user state (an activation or package
+    membership) it is left whole and the moved row keeps its old path. Any
+    DB error rolls everything back and is re-raised."""
     warnings: list[str] = []
     missing: list[Path] = []
     try:
@@ -542,14 +556,15 @@ def _update_db_paths(conn: sqlite3.Connection, moves: list[tuple[Path, Path]]) -
                 continue
             clash_id = _find_row_id(conn, new)
             if clash_id is not None and clash_id != row_id:
-                try:
-                    conn.execute("DELETE FROM font_files WHERE id = ?", (clash_id,))
-                except sqlite3.IntegrityError:
+                if _has_user_state(conn, clash_id):
                     warnings.append(
-                        f"stale DB row at {new} has dependencies and was left in place; "
-                        f"the moved file's row still has its old path. Rescan recommended"
+                        f"stale DB row at {new} has dependencies (activation or package) and was left in "
+                        f"place; the moved file's row still has its old path. Rescan recommended"
                     )
                     continue
+                for table in _DERIVED_TABLES:
+                    conn.execute(f"DELETE FROM {table} WHERE font_file_id = ?", (clash_id,))
+                conn.execute("DELETE FROM font_files WHERE id = ?", (clash_id,))
                 warnings.append(f"replaced stale DB row at {new}. Rescan recommended")
             conn.execute(
                 "UPDATE font_files SET path = ?, filename = ? WHERE id = ?",

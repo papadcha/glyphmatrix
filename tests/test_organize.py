@@ -809,3 +809,98 @@ def test_undo_ignores_a_log_row_whose_move_never_happened(tmp_path):
 
     assert (restored, problems) == (0, [])
     assert font.exists()
+
+
+# --- stale DB row at the destination: derived data goes with it, user state blocks the delete ---
+
+def _library_with_a_stale_scanned_row(tmp_path):
+    """Two fonts to organize, plus a row from a real scan (glyphs and all) of a file that
+    has since been deleted and whose path is exactly where the Bold will land."""
+    root, gone = tmp_path / "fonts", tmp_path / "gone"
+    _arimo_pair(root)
+    gone.mkdir()
+    build_test_font(gone / "old.ttf", family="Other", manufacturer="X", version="Version 9.00")
+    conn = connect(tmp_path / "lib.db")
+    init_schema(conn)
+    ingest_directory(conn, tmp_path)
+    plan = plan_organize(root)
+    target = next(p.destination for p in plan if p.destination.name.endswith("Bold.ttf"))
+    stale_id = conn.execute("SELECT id FROM font_files WHERE filename = 'old.ttf'").fetchone()[0]
+    conn.execute("UPDATE font_files SET path = ?, filename = ? WHERE id = ?",
+                 (str(target), target.name, stale_id))
+    conn.execute("INSERT INTO validation_issues (font_file_id, severity, issue_type, detail) "
+                 "VALUES (?, 'info', 'test', 'x')", (stale_id,))
+    conn.commit()
+    (gone / "old.ttf").unlink()
+    assert conn.execute("SELECT COUNT(*) FROM font_glyphs WHERE font_file_id = ?", (stale_id,)).fetchone()[0] > 0
+    return root, conn, plan, target, stale_id
+
+
+def _count(conn, table, stale_id):
+    return conn.execute(f"SELECT COUNT(*) FROM {table} WHERE font_file_id = ?", (stale_id,)).fetchone()[0]
+
+
+def test_stale_scanned_row_and_its_derived_data_are_deleted(tmp_path):
+    root, conn, plan, target, stale_id = _library_with_a_stale_scanned_row(tmp_path)
+
+    result = apply_organize(plan, root, conn=conn)
+
+    assert result.moved == 2 and result.failure is None
+    assert target.exists()
+    assert conn.execute("SELECT 1 FROM font_files WHERE id = ?", (stale_id,)).fetchone() is None
+    assert _count(conn, "font_glyphs", stale_id) == 0
+    assert _count(conn, "validation_issues", stale_id) == 0
+    assert conn.execute("SELECT COUNT(*) FROM font_files WHERE path = ?", (str(target),)).fetchone()[0] == 1
+    assert any("stale DB row" in w and "Rescan recommended" in w for w in result.warnings)
+
+
+def test_stale_scanned_row_with_an_activation_is_kept_whole(tmp_path):
+    root, conn, plan, target, stale_id = _library_with_a_stale_scanned_row(tmp_path)
+    glyphs = _count(conn, "font_glyphs", stale_id)
+    conn.execute("INSERT INTO activations (font_file_id, platform, state) VALUES (?, 'macos', 'active')",
+                 (stale_id,))
+    conn.commit()
+
+    result = apply_organize(plan, root, conn=conn)
+
+    assert result.moved == 2 and result.failure is None
+    assert target.exists() and result.catalog.exists()
+    assert any("has dependencies" in w and "Rescan recommended" in w for w in result.warnings)
+    assert conn.execute("SELECT 1 FROM font_files WHERE id = ?", (stale_id,)).fetchone()
+    assert _count(conn, "activations", stale_id) == 1
+    assert _count(conn, "font_glyphs", stale_id) == glyphs          # nothing deleted piecemeal
+    assert _count(conn, "validation_issues", stale_id) == 1
+
+
+def test_stale_scanned_row_in_a_package_is_kept_whole(tmp_path):
+    root, conn, plan, target, stale_id = _library_with_a_stale_scanned_row(tmp_path)
+    glyphs = _count(conn, "font_glyphs", stale_id)
+    package_id = conn.execute("INSERT INTO packages (name) VALUES ('Pack')").lastrowid
+    conn.execute("INSERT INTO package_files (package_id, font_file_id) VALUES (?, ?)", (package_id, stale_id))
+    conn.commit()
+
+    result = apply_organize(plan, root, conn=conn)
+
+    assert result.moved == 2 and result.failure is None
+    assert target.exists() and result.catalog.exists()
+    assert any("has dependencies" in w and "Rescan recommended" in w for w in result.warnings)
+    assert conn.execute("SELECT 1 FROM font_files WHERE id = ?", (stale_id,)).fetchone()
+    assert _count(conn, "package_files", stale_id) == 1
+    assert _count(conn, "font_glyphs", stale_id) == glyphs
+    assert _count(conn, "validation_issues", stale_id) == 1
+
+
+def test_failure_while_deleting_derived_data_rolls_everything_back(tmp_path):
+    root, conn, plan, target, stale_id = _library_with_a_stale_scanned_row(tmp_path)
+    names_before = sorted(p.name for p in root.iterdir())
+    rows_before = sorted(tuple(r) for r in conn.execute("SELECT id, path FROM font_files"))
+    glyphs = _count(conn, "font_glyphs", stale_id)
+    conn.execute("CREATE TRIGGER boom BEFORE DELETE ON font_glyphs BEGIN SELECT RAISE(ABORT, 'boom'); END")
+
+    result = apply_organize(plan, root, conn=conn)
+
+    assert result.failure and "boom" in result.failure
+    assert result.moved == 0 and result.catalog is None
+    assert sorted(p.name for p in root.iterdir()) == names_before        # files are back
+    assert sorted(tuple(r) for r in conn.execute("SELECT id, path FROM font_files")) == rows_before
+    assert _count(conn, "font_glyphs", stale_id) == glyphs
