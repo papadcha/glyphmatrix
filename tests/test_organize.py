@@ -791,3 +791,21 @@ def test_undo_reads_a_log_with_non_utf8_file_names(tmp_path):
 
     assert restored == 0
     assert len(problems) == 1
+
+
+def test_undo_ignores_a_log_row_whose_move_never_happened(tmp_path):
+    from glyphmatrix.core import organize as organize_mod
+
+    root = tmp_path / "fonts"
+    root.mkdir()
+    font = build_test_font(root / "arimo.ttf", family="Arimo")
+    log = tmp_path / "_organize-test.csv"
+    with log.open("w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["original_path", "new_path", "sha256"])
+        w.writerow([str(font), str(root / "Vendor/Arimo/v1/Arimo Regular.ttf"), organize_mod._sha256(font)])
+
+    restored, problems = undo_organize(log)
+
+    assert (restored, problems) == (0, [])
+    assert font.exists()

@@ -711,6 +711,8 @@ def undo_organize(log_path: str | Path, conn: sqlite3.Connection | None = None) 
     for row in reversed(rows):
         original, moved = Path(row["original_path"]), Path(row["new_path"])
         if not moved.exists():
+            if original.exists() and _sha256(original) == row["sha256"]:
+                continue  # the move never completed (log row is written before the delete): nothing to restore
             problems.append(f"missing: {moved}")
             continue
         if original.exists():
