@@ -12,7 +12,7 @@ from glyphmatrix.core.collections import add_face_to_collection, create_collecti
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.parser import parse_font_file
-from glyphmatrix.core.tags import add_tags, list_tags_for_face
+from glyphmatrix.core.tags import add_tags, list_tags_for_face, remove_tag
 
 from .fontbuilder import build_test_font
 
@@ -179,3 +179,17 @@ def test_cli_scan_reparse_flag(tmp_path):
     assert "reparsed" not in plain.output
     assert result.exit_code == 0, result.output
     assert "reparsed 1" in result.output
+
+
+def test_reparse_adds_umbrella_tag_to_library_scanned_before_it(tmp_path):
+    build_test_font(tmp_path / "Times.ttf", family="Times", style="Regular", family_class=2 * 256)
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    face_id = _face_of(conn, "Times.ttf")
+    remove_tag(conn, face_id, "serif")  # as tagged by a version without umbrella tags
+
+    ingest_directory(conn, tmp_path)
+    assert "serif" not in list_tags_for_face(conn, face_id)  # unchanged file: left alone
+
+    ingest_directory(conn, tmp_path, reparse=True)
+    assert "serif" in list_tags_for_face(conn, face_id)

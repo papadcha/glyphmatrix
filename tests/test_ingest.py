@@ -1,10 +1,12 @@
 import shutil
 
+import pytest
+
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.query import find_face_id
-from glyphmatrix.core.tags import list_tags_for_face
+from glyphmatrix.core.tags import find_faces_by_tag, list_tags_for_face
 
 from .fontbuilder import build_test_font
 
@@ -59,6 +61,46 @@ def test_ingest_directory_auto_tags_family_class(tmp_path):
 
     face_id = find_face_id(conn, "Arial", "Regular")
     assert "sans-serif" in list_tags_for_face(conn, face_id)
+
+
+@pytest.mark.parametrize(
+    "family_class,expected",
+    [
+        (1 * 256, "serif"),   # oldstyle-serif
+        (2 * 256, "serif"),   # transitional-serif
+        (3 * 256, "serif"),   # modern-serif
+        (5 * 256, "serif"),   # slab-serif
+        (8 * 256, "sans-serif"),
+    ],
+)
+def test_ingest_directory_adds_umbrella_tag(tmp_path, family_class, expected):
+    build_test_font(tmp_path / "F.ttf", family="F", style="Regular", family_class=family_class)
+    conn = _conn()
+
+    ingest_directory(conn, tmp_path)
+
+    assert [f["family"] for f in find_faces_by_tag(conn, expected)] == ["F"]
+
+
+def test_umbrella_tag_from_panose_alone(tmp_path):
+    # No sFamilyClass; PANOSE Latin Text (2) with serif style "cove" (2).
+    build_test_font(tmp_path / "F.ttf", family="F", style="Regular", panose=(2, 2, 5, 3, 0, 0, 0, 0, 0, 0))
+    conn = _conn()
+
+    ingest_directory(conn, tmp_path)
+
+    tags = list_tags_for_face(conn, find_face_id(conn, "F", "Regular"))
+    assert "cove" in tags and "serif" in tags
+
+
+def test_no_umbrella_tag_for_non_text_classes(tmp_path):
+    build_test_font(tmp_path / "F.ttf", family="F", style="Regular", family_class=12 * 256)  # symbolic
+    conn = _conn()
+
+    ingest_directory(conn, tmp_path)
+
+    tags = list_tags_for_face(conn, find_face_id(conn, "F", "Regular"))
+    assert "serif" not in tags and "sans-serif" not in tags
 
 
 def test_ingest_directory_no_family_class_tag_when_unclassified(tmp_path):

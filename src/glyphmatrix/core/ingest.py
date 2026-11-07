@@ -12,6 +12,32 @@ from glyphmatrix.core.scanner import scan_directory
 from glyphmatrix.core.tags import add_tags
 
 
+# Broad tag added next to the fine-grained classification tags, so
+# `tag find serif` finds Times whether it is tagged "transitional-serif"
+# (sFamilyClass) or "cove" (PANOSE). Named like the CSS generic families;
+# "sans-serif" is itself an sFamilyClass tag, so it doubles as the sans one.
+_UMBRELLA_TAGS = {
+    **dict.fromkeys(
+        ("oldstyle-serif", "transitional-serif", "modern-serif", "clarendon-serif",
+         "slab-serif", "freeform-serif"),
+        "serif",
+    ),
+    **dict.fromkeys(
+        ("cove", "obtuse-cove", "square-cove", "obtuse-square-cove", "square", "thin",
+         "oval", "exaggerated", "triangle"),
+        "serif",
+    ),
+    **dict.fromkeys(("normal-sans", "obtuse-sans", "perp-sans", "flared", "rounded"), "sans-serif"),
+}
+
+
+def classification_tags(parsed: ParsedFont) -> list[str]:
+    """Auto tags for a face: its sFamilyClass and PANOSE classes, plus the
+    serif/sans-serif umbrella they belong to."""
+    tags = [t for t in (parsed.family_class, parsed.panose_class) if t]
+    return tags + [_UMBRELLA_TAGS[t] for t in tags if t in _UMBRELLA_TAGS]
+
+
 def find_or_create_family(conn: sqlite3.Connection, name: str, foundry: str | None = None) -> int:
     row = conn.execute("SELECT id FROM families WHERE name = ?", (name,)).fetchone()
     if row is not None:
@@ -234,10 +260,7 @@ def ingest_directory(
                 face_id = find_or_create_face(conn, family_id, parsed)
             else:
                 face_id = _resolve_known_face(conn, known, family_id, parsed)
-            if parsed.family_class:
-                add_tags(conn, face_id, [parsed.family_class])
-            if parsed.panose_class:
-                add_tags(conn, face_id, [parsed.panose_class])
+            add_tags(conn, face_id, classification_tags(parsed))
             _, status = ingest_font_file(conn, face_id, parsed, source=source, force=reparse)
             seen_paths.add(str(font_path))
             if status == "added":
