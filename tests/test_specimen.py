@@ -134,3 +134,27 @@ def test_word_art_fonts_show_their_letters(tmp_path):
     entry = collect(root)[0]
 
     assert (entry.sample, entry.note) == ("abcdefgh", "word-art font")
+
+
+def test_font_failing_after_open_becomes_unreadable_entry(tmp_path, monkeypatch):
+    # Tables load lazily: a broken cmap only fails when read, after TTFont() succeeded.
+    from fontTools.ttLib import TTFont
+
+    root = tmp_path / "fonts"
+    root.mkdir()
+    build_test_font(root / "broken.ttf", extra_codepoints=LATIN)
+    build_test_font(root / "fine.ttf", family="Fine", extra_codepoints=LATIN)
+    real = TTFont.getBestCmap
+
+    def flaky(self, *args, **kwargs):
+        if self.reader.file.name.endswith("broken.ttf"):
+            raise ValueError("truncated cmap")
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(TTFont, "getBestCmap", flaky)
+    entries = {e.path.name: e for e in collect(root)}
+
+    assert entries["broken.ttf"].note == "unreadable: truncated cmap"
+    assert entries["broken.ttf"].sample is None
+    assert entries["fine.ttf"].label == "Fine"
+    assert entries["fine.ttf"].sample is not None

@@ -143,3 +143,19 @@ def test_name_version_with_number_is_kept(tmp_path):
     )
 
     assert parse_font_file(font_path).version == "Version 1.23"
+
+
+def test_single_font_with_ttc_extension_parses_as_plain_font(tmp_path):
+    # No "ttcf" header: TTCollection() would reject it; TTFont() reads it.
+    path = build_test_font(tmp_path / "single.ttc", family="Solo", style="Bold")
+
+    parsed = parse_font_file(path)
+
+    assert (parsed.family_name, parsed.style, parsed.format) == ("Solo", "Bold", "ttc")
+    assert "collection" not in (parsed.metadata or {})
+
+
+def test_features_of_a_ttc_read_the_first_member(tmp_path):
+    from glyphmatrix.core.opentype_features import list_features
+
+    assert list_features(_build_ttc(tmp_path)) == []  # used to raise TTLibFileIsCollectionError

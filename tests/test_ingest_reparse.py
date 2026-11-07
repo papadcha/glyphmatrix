@@ -193,3 +193,44 @@ def test_reparse_adds_umbrella_tag_to_library_scanned_before_it(tmp_path):
 
     ingest_directory(conn, tmp_path, reparse=True)
     assert "serif" in list_tags_for_face(conn, face_id)
+
+
+def _foundry(conn, family="Foo"):
+    return conn.execute("SELECT foundry FROM families WHERE name = ?", (family,)).fetchone()[0]
+
+
+def test_scan_fills_missing_foundry(tmp_path):
+    build_test_font(tmp_path / "Foo-Regular.ttf", family="Foo", style="Regular")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    assert _foundry(conn) is None
+
+    build_test_font(tmp_path / "Foo-Bold.ttf", family="Foo", style="Bold", manufacturer="Bitstream")
+    ingest_directory(conn, tmp_path)  # plain scan: the new file brings a foundry
+
+    assert _foundry(conn) == "Bitstream"
+
+
+def test_plain_scan_keeps_a_different_foundry_reparse_replaces_it(tmp_path, monkeypatch):
+    build_test_font(tmp_path / "Foo.ttf", family="Foo", manufacturer="Old Name")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+    build_test_font(tmp_path / "Foo-Bold.ttf", family="Foo", style="Bold", manufacturer="New Name")
+
+    ingest_directory(conn, tmp_path)
+    assert _foundry(conn) == "Old Name"
+
+    _parser_now_says(monkeypatch, foundry="New Name")
+    ingest_directory(conn, tmp_path, reparse=True)
+    assert _foundry(conn) == "New Name"
+
+
+def test_reparse_never_clears_foundry(tmp_path, monkeypatch):
+    build_test_font(tmp_path / "Foo.ttf", family="Foo", manufacturer="Bitstream")
+    conn = _conn()
+    ingest_directory(conn, tmp_path)
+
+    _parser_now_says(monkeypatch, foundry=None)
+    ingest_directory(conn, tmp_path, reparse=True)
+
+    assert _foundry(conn) == "Bitstream"

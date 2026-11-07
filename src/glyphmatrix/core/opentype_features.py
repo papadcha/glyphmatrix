@@ -82,7 +82,8 @@ def list_features(path: str | Path) -> list[dict]:
     A feature can appear in both GSUB and GPOS (e.g. "locl"); merged into one
     row per tag with both tables listed."""
     tags_to_tables: dict[str, set[str]] = {}
-    with quiet_fonttools(), TTFont(path, lazy=True) as font:
+    # fontNumber=0: for a .ttc/.otc, the member the parser stores for the file.
+    with quiet_fonttools(), TTFont(path, lazy=True, fontNumber=0) as font:
         for table_tag in ("GSUB", "GPOS"):
             if table_tag not in font:
                 continue

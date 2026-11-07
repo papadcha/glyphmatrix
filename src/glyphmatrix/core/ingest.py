@@ -38,9 +38,17 @@ def classification_tags(parsed: ParsedFont) -> list[str]:
     return tags + [_UMBRELLA_TAGS[t] for t in tags if t in _UMBRELLA_TAGS]
 
 
-def find_or_create_family(conn: sqlite3.Connection, name: str, foundry: str | None = None) -> int:
-    row = conn.execute("SELECT id FROM families WHERE name = ?", (name,)).fetchone()
+def find_or_create_family(
+    conn: sqlite3.Connection, name: str, foundry: str | None = None, replace_foundry: bool = False
+) -> int:
+    """Family row for name. An existing family's missing foundry is filled
+    in; a different one is replaced only with replace_foundry (scan
+    --reparse), so files of one family that disagree can't flip it back and
+    forth on every scan. A foundry is never cleared."""
+    row = conn.execute("SELECT id, foundry FROM families WHERE name = ?", (name,)).fetchone()
     if row is not None:
+        if foundry and (row["foundry"] is None or (replace_foundry and row["foundry"] != foundry)):
+            conn.execute("UPDATE families SET foundry = ? WHERE id = ?", (foundry, row["id"]))
         return row["id"]
     cur = conn.execute("INSERT INTO families (name, foundry) VALUES (?, ?)", (name, foundry))
     return cur.lastrowid
@@ -255,7 +263,9 @@ def ingest_directory(
             if known is not None and known["content_hash"] == parsed.content_hash and not reparse:
                 seen_paths.add(str(font_path))
                 continue
-            family_id = find_or_create_family(conn, parsed.family_name, parsed.foundry)
+            family_id = find_or_create_family(
+                conn, parsed.family_name, parsed.foundry, replace_foundry=reparse
+            )
             if known is None:
                 face_id = find_or_create_face(conn, family_id, parsed)
             else:

@@ -87,3 +87,52 @@ def test_quiet_fonttools_restores_level_on_exception():
     except ValueError:
         pass
     assert logger.level == original
+
+
+def _broken_name_table_font(path):
+    """A font whose name table header is garbage: fontTools logs one ERROR
+    per name record (count 0xFFFF), 65535 lines without collapsing."""
+    build_test_font(path)
+    offset = TTFont(path).reader.tables["name"].offset
+    data = bytearray(path.read_bytes())
+    data[offset:offset + 6] = b"\xff" * 6
+    path.write_bytes(bytes(data))
+    return path
+
+
+def test_repeated_fonttools_errors_collapse_to_one_line(tmp_path):
+    path = _broken_name_table_font(tmp_path / "broken.ttf")
+
+    stderr = _stderr_of(
+        "from glyphmatrix.core.parser import parse_font_file\n"
+        "try: parse_font_file(sys.argv[1])\n"
+        "except Exception: pass",
+        path,
+    )
+
+    lines = stderr.splitlines()
+    assert len(lines) <= 3, lines[:5]
+    assert any("skipping malformed name record" in line and "more like it" in line for line in lines)
+
+
+def test_quiet_fonttools_passes_each_distinct_error_once_with_count(caplog):
+    log = logging.getLogger("fontTools.ttLib.tables._n_a_m_e")
+    with caplog.at_level(logging.ERROR):
+        with quiet_fonttools():
+            for i in range(500):
+                log.error("skipping malformed name record #%d", i)
+            log.error("something else")
+            log.warning("hidden warning")
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages == ["skipping malformed name record #0 (and 499 more like it)", "something else"]
+
+
+def test_quiet_fonttools_restores_handlers_and_propagation():
+    logger = logging.getLogger("fontTools")
+    handlers, propagate = list(logger.handlers), logger.propagate
+
+    with quiet_fonttools():
+        pass
+
+    assert logger.handlers == handlers and logger.propagate == propagate

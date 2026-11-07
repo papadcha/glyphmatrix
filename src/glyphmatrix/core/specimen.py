@@ -122,16 +122,9 @@ def _word_art_letters(font: TTFont, cmap: dict) -> str | None:
     return "".join(letters) if ratios[len(ratios) // 2] >= WORD_ART_RATIO else None
 
 
-def _describe(path: Path, sample_text: str) -> tuple[str, str | None, str, str]:
-    """(label, sample to draw or None, note, FreeType encoding)."""
-    if path.suffix.lower() not in {".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2"}:
-        return path.stem, None, f"no preview for {path.suffix.lower()} files", ""
-    with quiet_fonttools():
-        try:
-            font = TTFont(path, lazy=True, fontNumber=0)
-        except Exception as exc:
-            return path.stem, None, f"unreadable: {exc}", ""
-    with quiet_fonttools(), font:
+def _read_font(path: Path) -> tuple[str, str, dict, str | None, dict]:
+    """(family, style, cmap, word-art letters, Symbol-charmap cmap)."""
+    with quiet_fonttools(), TTFont(path, lazy=True, fontNumber=0) as font:
         names = font["name"]
         family = (names.getBestFamilyName() or path.stem).strip()
         style = (names.getBestSubFamilyName() or "Regular").strip()
@@ -146,6 +139,19 @@ def _describe(path: Path, sample_text: str) -> tuple[str, str | None, str, str]:
             for table in font["cmap"].tables:
                 if table.platformID == 3 and table.platEncID == 0:
                     symbol.update(table.cmap)
+    return family, style, cmap, word_art, symbol
+
+
+def _describe(path: Path, sample_text: str) -> tuple[str, str | None, str, str]:
+    """(label, sample to draw or None, note, FreeType encoding)."""
+    if path.suffix.lower() not in {".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2"}:
+        return path.stem, None, f"no preview for {path.suffix.lower()} files", ""
+    try:
+        family, style, cmap, word_art, symbol = _read_font(path)
+    except Exception as exc:
+        # Tables are decompiled lazily, so a broken one can fail at any read,
+        # not just on open: one bad font must not abort the whole specimen.
+        return path.stem, None, f"unreadable: {exc}", ""
     label = family if style == "Regular" else f"{family} {style}"
     if symbol:
         own = [chr(c) for c in sorted(symbol) if (c & 0xFF) > 0x20][:40]

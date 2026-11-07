@@ -17,20 +17,47 @@ from glyphmatrix.core.foundry import clean_designer, copyright_years, resolve_fo
 from glyphmatrix.core.panose import classify_panose
 
 
+class _CollapseRepeats(logging.Handler):
+    """Holds fontTools records back, one per (logger, message template), with
+    a count: a broken name table logs "skipping malformed name record #%d"
+    once per record, tens of thousands of times."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.held: dict[tuple, list] = {}
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.held.setdefault((record.name, record.levelno, record.msg), [record, 0])[1] += 1
+
+    def pass_on(self) -> None:
+        for record, count in self.held.values():
+            if count > 1:
+                record.msg = f"{record.getMessage()} (and {count - 1} more like it)"
+                record.args = None
+            logging.getLogger(record.name).handle(record)
+
+
 @contextmanager
 def quiet_fonttools() -> Iterator[None]:
     """Hide fontTools' WARNING-level log noise ("'created' timestamp out of
     range", "extra bytes in post.stringData array", ...) for the duration of
     the block, then restore the previous level. Tables are decompiled lazily,
     so the whole time the font is used must be inside the block, not just the
-    TTFont() call. Errors still get through."""
+    TTFont() call. Errors still get through, but a repeated one is passed on
+    once, with its count, when the block ends."""
     logger = logging.getLogger("fontTools")
-    previous = logger.level
+    previous_level, previous_propagate = logger.level, logger.propagate
+    collapse = _CollapseRepeats()
     logger.setLevel(logging.ERROR)
+    logger.addHandler(collapse)
+    logger.propagate = False
     try:
         yield
     finally:
-        logger.setLevel(previous)
+        logger.removeHandler(collapse)
+        logger.propagate = previous_propagate
+        logger.setLevel(previous_level)
+        collapse.pass_on()
 
 # CSS-ish label per OS/2.usWidthClass (1-9). None if usWidthClass is absent/unknown.
 _WIDTH_CLASSES = {
@@ -610,6 +637,11 @@ def _parse_unsupported(path: Path, content_hash: str) -> ParsedFont:
     )
 
 
+def _is_collection(path: Path) -> bool:
+    with path.open("rb") as fh:
+        return fh.read(4) == b"ttcf"
+
+
 def _collection_members(path: Path) -> list[dict]:
     """Family/style/PostScript name of every font inside a .ttc/.otc."""
     members = []
@@ -741,7 +773,9 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         return _parse_unsupported(path, content_hash)
 
     metadata = None
-    if fmt in _COLLECTION_FORMATS:
+    # By header, not extension: a single font saved as .ttc has no "ttcf"
+    # header and TTCollection() rejects it, while TTFont() reads it fine.
+    if fmt in _COLLECTION_FORMATS and _is_collection(path):
         metadata = {"collection": _collection_members(path)}
 
     # For a collection, the first member stands for the file; the others are
