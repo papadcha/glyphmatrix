@@ -630,6 +630,50 @@ def _fallback_version(font: TTFont, version: str | None) -> str | None:
     return match.group(1)
 
 
+# Weight words in an sfnt style name, for fonts whose OS/2.usWeightClass was
+# left at the 400 default (or that have no OS/2 table). Compounds are stored
+# joined ("extra" + "bold" -> "extrabold").
+_STYLE_WEIGHTS: dict[str, int] = {
+    "thin": 100, "hairline": 100,
+    "extralight": 200, "ultralight": 200,
+    "light": 300,
+    "medium": 500,
+    "semibold": 600, "demibold": 600, "demi": 600,
+    "bold": 700,
+    "extrabold": 800, "ultrabold": 800,
+    "black": 900, "heavy": 900, "extrablack": 900, "ultrablack": 900, "ultra": 900,
+}
+_WEIGHT_MODIFIERS = {"extra": "extra", "ultra": "ultra", "x": "extra", "semi": "semi", "demi": "demi"}
+# "Extra"/"Ultra"/"Semi" before one of these describe the width, not the weight.
+_WIDTH_WORDS = {"condensed", "cond", "compressed", "narrow", "expanded", "extended", "wide"}
+_STYLE_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+")
+
+
+def _weight_from_style(style: str | None) -> int | None:
+    """Weight named by the style ("Black" -> 900, "ExtraBold" -> 800,
+    "Demi Italic" -> 600). None when the style names no weight, or names
+    conflicting ones; "Extra Condensed" is a width and counts as nothing."""
+    words = [w.lower() for w in _STYLE_WORD.findall(style or "")]
+    found = set()
+    i = 0
+    while i < len(words):
+        word = words[i]
+        nxt = words[i + 1] if i + 1 < len(words) else None
+        if word in _WEIGHT_MODIFIERS and nxt is not None:
+            if nxt in _WIDTH_WORDS:
+                i += 2
+                continue
+            compound = _WEIGHT_MODIFIERS[word] + nxt
+            if compound in _STYLE_WEIGHTS:
+                found.add(_STYLE_WEIGHTS[compound])
+                i += 2
+                continue
+        if word in _STYLE_WEIGHTS:
+            found.add(_STYLE_WEIGHTS[word])
+        i += 1
+    return found.pop() if len(found) == 1 else None
+
+
 def _hash_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -719,6 +763,14 @@ def parse_font_file(path: str | Path) -> ParsedFont:
                     panose.bArmStyle, panose.bLetterForm, panose.bMidline, panose.bXHeight,
                 )
                 panose_class = classify_panose(panose_bytes)
+
+        # Many fonts leave usWeightClass at the 400 default whatever the
+        # weight; trust the style name then. A non-default value is kept as is.
+        if weight in (None, 400):
+            style_weight = _weight_from_style(style)
+            if style_weight is not None:
+                metadata = {**(metadata or {}), "weight_source": "style_name", "os2_weight_class": weight}
+                weight = style_weight
 
         is_variable = "fvar" in font
         axes = None
