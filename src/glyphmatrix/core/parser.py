@@ -784,13 +784,21 @@ def parse_font_file(path: str | Path) -> ParsedFont:
                 )
                 panose_class = classify_panose(panose_bytes)
 
+        os2_weight = weight
+        weight_source = None
+        # Some old fonts store usWeightClass on a 1-9 scale (5 = normal).
+        if weight is not None and 1 <= weight <= 9:
+            weight *= 100
+            weight_source = "os2_1_to_9_scale"
         # Many fonts leave usWeightClass at the 400 default whatever the
         # weight; trust the style name then. A non-default value is kept as is.
         if weight in (None, 400):
             style_weight = _weight_from_style(style)
             if style_weight is not None:
-                metadata = {**(metadata or {}), "weight_source": "style_name", "os2_weight_class": weight}
                 weight = style_weight
+                weight_source = "style_name"
+        if weight_source is not None:
+            metadata = {**(metadata or {}), "weight_source": weight_source, "os2_weight_class": os2_weight}
 
         is_variable = "fvar" in font
         axes = None

@@ -93,3 +93,28 @@ def test_width_only_style_keeps_400(tmp_path):
     parsed = parse_font_file(build_test_font(tmp_path / "f.ttf", style="Extra Condensed"))
 
     assert parsed.weight == 400
+
+
+@pytest.mark.parametrize("legacy,expected", [(1, 100), (3, 300), (5, 500), (7, 700), (9, 900)])
+def test_legacy_1_to_9_weight_class_is_scaled(tmp_path, legacy, expected):
+    parsed = parse_font_file(build_test_font(tmp_path / "f.ttf", style="Regular", weight=legacy))
+
+    assert parsed.weight == expected
+    assert parsed.metadata["weight_source"] == "os2_1_to_9_scale"
+    assert parsed.metadata["os2_weight_class"] == legacy
+
+
+def test_legacy_4_is_normal_so_style_name_still_applies(tmp_path):
+    parsed = parse_font_file(build_test_font(tmp_path / "f.ttf", style="Black", weight=4))
+
+    assert parsed.weight == 900
+    assert parsed.metadata["weight_source"] == "style_name"
+    assert parsed.metadata["os2_weight_class"] == 4  # the raw value from the file
+
+
+@pytest.mark.parametrize("weight", [100, 250, 950, 1000])
+def test_weight_class_outside_1_to_9_is_not_scaled(tmp_path, weight):
+    parsed = parse_font_file(build_test_font(tmp_path / "f.ttf", style="Regular", weight=weight))
+
+    assert parsed.weight == weight
+    assert parsed.metadata is None
