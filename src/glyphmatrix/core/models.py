@@ -97,3 +97,4 @@ class ScanRun:
     files_changed: int = 0
     files_removed: int = 0
     errors: int = 0
+    files_reparsed: int = 0  # unchanged files re-read by scan --reparse (not stored in scan_runs)

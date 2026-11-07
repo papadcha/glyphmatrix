@@ -105,17 +105,20 @@ def _connect(ctx: click.Context) -> sqlite3.Connection:
 
 @fontctl.command()
 @click.argument("directory", type=click.Path(exists=True, file_okay=False))
+@click.option("--reparse", is_flag=True,
+              help="Re-read unchanged files too (e.g. after a parser update) and update their faces in place.")
 @click.option("--json", "as_json", is_flag=True)
 @click.pass_context
-def scan(ctx: click.Context, directory: str, as_json: bool) -> None:
+def scan(ctx: click.Context, directory: str, reparse: bool, as_json: bool) -> None:
     conn = _connect(ctx)
-    result = ingest_directory(conn, directory)
+    result = ingest_directory(conn, directory, reparse=reparse)
     if as_json:
         click.echo(json.dumps(asdict(result)))
     else:
+        reparsed = f"reparsed {result.files_reparsed}  " if reparse else ""
         click.echo(
             f"scanned {result.files_scanned}  added {result.files_added}  "
-            f"changed {result.files_changed}  removed {result.files_removed}  "
+            f"changed {result.files_changed}  {reparsed}removed {result.files_removed}  "
             f"errors {result.errors}"
         )
 

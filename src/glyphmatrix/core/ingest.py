@@ -20,13 +20,18 @@ def find_or_create_family(conn: sqlite3.Connection, name: str, foundry: str | No
     return cur.lastrowid
 
 
-def find_or_create_face(conn: sqlite3.Connection, family_id: int, parsed: ParsedFont) -> int:
+def _find_face(conn: sqlite3.Connection, family_id: int, parsed: ParsedFont) -> int | None:
     row = conn.execute(
         "SELECT id FROM font_faces WHERE family_id = ? AND style IS ? AND weight IS ? AND width IS ?",
         (family_id, parsed.style, parsed.weight, parsed.width),
     ).fetchone()
-    if row is not None:
-        return row["id"]
+    return row["id"] if row is not None else None
+
+
+def find_or_create_face(conn: sqlite3.Connection, family_id: int, parsed: ParsedFont) -> int:
+    face_id = _find_face(conn, family_id, parsed)
+    if face_id is not None:
+        return face_id
     cur = conn.execute(
         "INSERT INTO font_faces (family_id, style, weight, width, is_variable, axes_json) "
         "VALUES (?, ?, ?, ?, ?, ?)",
@@ -40,6 +45,66 @@ def find_or_create_face(conn: sqlite3.Connection, family_id: int, parsed: Parsed
         ),
     )
     return cur.lastrowid
+
+
+def _resolve_known_face(
+    conn: sqlite3.Connection, file_row: sqlite3.Row, family_id: int, parsed: ParsedFont
+) -> int:
+    """Face for a file already in the library whose parse may now differ (new
+    content, or --reparse after a parser change). A face carries the user's
+    tags and collections, so it is updated or merged, never left behind empty:
+    - same family/style/weight/width: keep it;
+    - the file is the face's only file: update the face in place, or if a face
+      with the new values already exists, move the file there and carry the
+      tags/collections over;
+    - other files share the face: move only this file, leaving theirs as is."""
+    old_id = file_row["font_face_id"]
+    old = conn.execute("SELECT * FROM font_faces WHERE id = ?", (old_id,)).fetchone()
+    if old is None:
+        return find_or_create_face(conn, family_id, parsed)
+
+    axes_json = json.dumps(parsed.axes) if parsed.axes else None
+    if (old["family_id"], old["style"], old["weight"], old["width"]) == (
+        family_id, parsed.style, parsed.weight, parsed.width
+    ):
+        conn.execute(
+            "UPDATE font_faces SET is_variable = ?, axes_json = ? WHERE id = ?",
+            (int(parsed.is_variable), axes_json, old_id),
+        )
+        return old_id
+
+    shared = conn.execute(
+        "SELECT COUNT(*) AS n FROM font_files WHERE font_face_id = ?", (old_id,)
+    ).fetchone()["n"] > 1
+    if shared:
+        return find_or_create_face(conn, family_id, parsed)
+
+    target_id = _find_face(conn, family_id, parsed)
+    if target_id is None:
+        conn.execute(
+            "UPDATE font_faces SET family_id = ?, style = ?, weight = ?, width = ?, "
+            "is_variable = ?, axes_json = ? WHERE id = ?",
+            (family_id, parsed.style, parsed.weight, parsed.width,
+             int(parsed.is_variable), axes_json, old_id),
+        )
+        new_id = old_id
+    else:
+        conn.execute("UPDATE font_files SET font_face_id = ? WHERE font_face_id = ?", (target_id, old_id))
+        for table in ("font_tags", "collection_faces"):
+            conn.execute(
+                f"UPDATE OR IGNORE {table} SET font_face_id = ? WHERE font_face_id = ?", (target_id, old_id)
+            )
+            conn.execute(f"DELETE FROM {table} WHERE font_face_id = ?", (old_id,))
+        conn.execute("DELETE FROM font_faces WHERE id = ?", (old_id,))
+        new_id = target_id
+
+    if old["family_id"] != family_id:
+        conn.execute(
+            "DELETE FROM families WHERE id = ? AND NOT EXISTS "
+            "(SELECT 1 FROM font_faces WHERE family_id = ?)",
+            (old["family_id"], old["family_id"]),
+        )
+    return new_id
 
 
 def _flag_unsupported_format(conn: sqlite3.Connection, font_file_id: int, fmt: str) -> None:
@@ -65,15 +130,18 @@ def _metadata_json(parsed: ParsedFont) -> str | None:
 
 
 def ingest_font_file(
-    conn: sqlite3.Connection, font_face_id: int, parsed: ParsedFont, source: str = "user"
+    conn: sqlite3.Connection, font_face_id: int, parsed: ParsedFont, source: str = "user",
+    force: bool = False,
 ) -> tuple[int, str]:
     """Insert or update the font_files row for parsed.path. Returns
-    (font_file_id, status) where status is 'added', 'changed', or 'unchanged'."""
+    (font_file_id, status) where status is 'added', 'changed', 'unchanged',
+    or 'reparsed' (force=True on unchanged content: row and glyphs rewritten)."""
     existing = conn.execute(
         "SELECT id, content_hash FROM font_files WHERE path = ?", (str(parsed.path),)
     ).fetchone()
 
-    if existing is not None and existing["content_hash"] == parsed.content_hash:
+    same_content = existing is not None and existing["content_hash"] == parsed.content_hash
+    if same_content and not force:
         return existing["id"], "unchanged"
 
     if existing is not None:
@@ -94,7 +162,7 @@ def ingest_font_file(
             ),
         )
         conn.execute("DELETE FROM font_glyphs WHERE font_file_id = ?", (font_file_id,))
-        status = "changed"
+        status = "reparsed" if same_content else "changed"
     else:
         cur = conn.execute(
             "INSERT INTO font_files (font_face_id, path, filename, format, content_hash, "
@@ -137,29 +205,47 @@ def ingest_font_file(
     return font_file_id, status
 
 
-def ingest_directory(conn: sqlite3.Connection, root: str | Path, source: str = "user") -> ScanRun:
+def ingest_directory(
+    conn: sqlite3.Connection, root: str | Path, source: str = "user", reparse: bool = False
+) -> ScanRun:
+    """Scan root into the library. Files whose content is unchanged are left
+    alone (no family/face lookups, so a parser change can't leave empty faces
+    behind); reparse=True re-reads them too and updates their existing face
+    in place."""
     root = Path(root)
     root_prefix = str(root).rstrip(os.sep) + os.sep
     started_at = datetime.now(timezone.utc).isoformat()
     seen_paths: set[str] = set()
-    scanned = added = changed = errors = 0
+    scanned = added = changed = reparsed = errors = 0
 
     for font_path in scan_directory(root):
         scanned += 1
         try:
             parsed = parse_font_file(font_path)
+            known = conn.execute(
+                "SELECT id, content_hash, font_face_id FROM font_files WHERE path = ?",
+                (str(parsed.path),),
+            ).fetchone()
+            if known is not None and known["content_hash"] == parsed.content_hash and not reparse:
+                seen_paths.add(str(font_path))
+                continue
             family_id = find_or_create_family(conn, parsed.family_name, parsed.foundry)
-            face_id = find_or_create_face(conn, family_id, parsed)
+            if known is None:
+                face_id = find_or_create_face(conn, family_id, parsed)
+            else:
+                face_id = _resolve_known_face(conn, known, family_id, parsed)
             if parsed.family_class:
                 add_tags(conn, face_id, [parsed.family_class])
             if parsed.panose_class:
                 add_tags(conn, face_id, [parsed.panose_class])
-            _, status = ingest_font_file(conn, face_id, parsed, source=source)
+            _, status = ingest_font_file(conn, face_id, parsed, source=source, force=reparse)
             seen_paths.add(str(font_path))
             if status == "added":
                 added += 1
             elif status == "changed":
                 changed += 1
+            elif status == "reparsed":
+                reparsed += 1
         except Exception:
             errors += 1
 
@@ -191,4 +277,5 @@ def ingest_directory(conn: sqlite3.Connection, root: str | Path, source: str = "
         files_changed=changed,
         files_removed=removed,
         errors=errors,
+        files_reparsed=reparsed,
     )
