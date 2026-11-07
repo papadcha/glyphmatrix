@@ -3,9 +3,12 @@ from __future__ import annotations
 import sqlite3
 
 
-def add_tags(conn: sqlite3.Connection, font_face_id: int, tag_names: list[str]) -> list[str]:
+def add_tags(
+    conn: sqlite3.Connection, font_face_id: int, tag_names: list[str], commit: bool = True
+) -> list[str]:
     """Tag a face with each name. Returns the tags actually applied — ones
-    already on the face are skipped rather than duplicated."""
+    already on the face are skipped rather than duplicated. commit=False
+    leaves the transaction to the caller (a scan commits per file itself)."""
     applied = []
     for raw_name in tag_names:
         name = raw_name.strip()
@@ -32,7 +35,8 @@ def add_tags(conn: sqlite3.Connection, font_face_id: int, tag_names: list[str]) 
             )
             applied.append(name)
 
-    conn.commit()
+    if commit:
+        conn.commit()
     return applied
 
 

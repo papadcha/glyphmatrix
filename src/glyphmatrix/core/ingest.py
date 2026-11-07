@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -239,6 +240,20 @@ def ingest_font_file(
     return font_file_id, status
 
 
+@contextmanager
+def _savepoint(conn: sqlite3.Connection):
+    """All-or-nothing block inside a scan: a file whose ingest fails halfway
+    (face moved, family merged, ...) is rolled back, not committed later."""
+    conn.execute("SAVEPOINT ingest_file")
+    try:
+        yield
+    except BaseException:
+        conn.execute("ROLLBACK TO SAVEPOINT ingest_file")
+        conn.execute("RELEASE SAVEPOINT ingest_file")
+        raise
+    conn.execute("RELEASE SAVEPOINT ingest_file")
+
+
 def ingest_directory(
     conn: sqlite3.Connection, root: str | Path, source: str = "user", reparse: bool = False
 ) -> ScanRun:
@@ -255,30 +270,31 @@ def ingest_directory(
     for font_path in scan_directory(root):
         scanned += 1
         try:
-            parsed = parse_font_file(font_path)
-            known = conn.execute(
-                "SELECT id, content_hash, font_face_id FROM font_files WHERE path = ?",
-                (str(parsed.path),),
-            ).fetchone()
-            if known is not None and known["content_hash"] == parsed.content_hash and not reparse:
+            with _savepoint(conn):  # one file is all-or-nothing
+                parsed = parse_font_file(font_path)
+                known = conn.execute(
+                    "SELECT id, content_hash, font_face_id FROM font_files WHERE path = ?",
+                    (str(parsed.path),),
+                ).fetchone()
+                if known is not None and known["content_hash"] == parsed.content_hash and not reparse:
+                    seen_paths.add(str(font_path))
+                    continue
+                family_id = find_or_create_family(
+                    conn, parsed.family_name, parsed.foundry, replace_foundry=reparse
+                )
+                if known is None:
+                    face_id = find_or_create_face(conn, family_id, parsed)
+                else:
+                    face_id = _resolve_known_face(conn, known, family_id, parsed)
+                add_tags(conn, face_id, classification_tags(parsed), commit=False)
+                _, status = ingest_font_file(conn, face_id, parsed, source=source, force=reparse)
                 seen_paths.add(str(font_path))
-                continue
-            family_id = find_or_create_family(
-                conn, parsed.family_name, parsed.foundry, replace_foundry=reparse
-            )
-            if known is None:
-                face_id = find_or_create_face(conn, family_id, parsed)
-            else:
-                face_id = _resolve_known_face(conn, known, family_id, parsed)
-            add_tags(conn, face_id, classification_tags(parsed))
-            _, status = ingest_font_file(conn, face_id, parsed, source=source, force=reparse)
-            seen_paths.add(str(font_path))
-            if status == "added":
-                added += 1
-            elif status == "changed":
-                changed += 1
-            elif status == "reparsed":
-                reparsed += 1
+                if status == "added":
+                    added += 1
+                elif status == "changed":
+                    changed += 1
+                elif status == "reparsed":
+                    reparsed += 1
         except Exception:
             errors += 1
 
