@@ -163,3 +163,8 @@ Chronological-ish; see git log for detail and `docs/proposal.md` for the design 
 - [x] Version from unique ID when nameID 5 has no number, only if `head.fontRevision` agrees.
 - [x] `fontctl organize` / `organize-undo` — explicit, dry-run-first reorganization into Vendor/Family/Version with verified moves, undo log, catalog CSV and review flags (`core/organize.py`). Checked on the real 46-file folder: apply + undo restored every file byte-for-byte.
 
+
+## Review findings, second pass (2026-11-07)
+- [x] `ingest_directory`: one SAVEPOINT per file (`add_tags(commit=False)` inside a scan), so a failure mid-file no longer leaves a half-applied face/family change that a later commit keeps.
+- [x] `write_catalog`: surrogateescape for non-UTF-8 names, temp file removed on failure, and a failing catalog write is a warning in `apply_organize` instead of a crash after the files have moved. `write_inventory` writes with surrogateescape too.
+- [x] `scanner.is_skipped`: `~/.fonts` and `~/.local/share/fonts` are scanned below the root; other hidden folders stay skipped.
