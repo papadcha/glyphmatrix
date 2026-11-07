@@ -29,6 +29,11 @@ Type 1 (`.pfb`/`.pfa`), BDF, PCF, and FON are now fully parsed (see DONE.md). Re
   4. Name hints (Sans, Serif, Script, Mono, Stencil, Dingbats, Handwritten) only when nothing else.
 - [ ] `.TDF` (Bitstream font-pack description files, `(C)BITS.'92`): read as sidecar metadata; never treat as fonts.
 - [ ] GUI (Tauri vs Electron decision still open above).
+- [ ] (low-medium) Non-Latin names: family/style are read through fontTools `getBestFamilyName`/`getBestSubFamilyName` (Windows English first, then any Windows language, then Mac Roman; checked with CJK, Arabic and Mac-Roman-only fonts) and non-Latin names go into folder and file names as they are. But there is no test with a non-Latin family/style/file name (the only non-ASCII in tests is "©"), and:
+      - a style written in another language ("Regular" as Arabic) is not recognised as Regular (size grouping, file names, weight fallback all compare English words);
+      - `list`/`info`/`--json` print JSON with `ensure_ascii` on (escaped `\uXXXX`), only `organize --json` uses `ensure_ascii=False`;
+      - printing to a Windows console or redirected stdout with a legacy code page (cp1252) may raise `UnicodeEncodeError` — unverified, needs a Windows run;
+      - catalog/inventory CSV are `utf-8-sig` (good for Excel); the undo log is plain UTF-8 + surrogateescape.
 - [ ] (medium) `write_catalog` is unguarded and runs after every file has moved: a non-UTF-8 file name (`UnicodeEncodeError`; the catalog is strict `utf-8-sig`) or an `OSError` on `os.replace` gives a traceback, no summary and a stray `_Font Catalog.tmp`. Files and DB are safe. Same encoding problem in `write_inventory`. Catch it, write with surrogateescape, report a warning.
 - [ ] (medium) macOS/Windows case-insensitive file systems: the "unchanged" test compares `resolve()` case-sensitively while `target.exists()` is not, so re-running `organize --case lower` on an organized folder plans every file as "name already taken; numbered" ("(2)") and `--apply` copies and renames them all. Compare case-insensitively (review finding J).
 - [ ] (medium) organize moves only files with font extensions, so Type 1 companions (`.pfm`, `.afm`, `.inf`) and Bitstream `.TDF` sidecars stay behind; they also keep the old folder from being pruned. Move sidecars with their font (match by stem) and flag orphans.
