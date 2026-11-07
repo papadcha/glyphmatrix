@@ -671,8 +671,14 @@ def apply_organize(
                 done.append((item.source, item.destination))
                 result.moved += 1
 
+    prune_failures = 0
     for old, _ in done:
-        _prune_empty_dirs(old.parent, source)
+        try:
+            _prune_empty_dirs(old.parent, source)
+        except OSError:
+            prune_failures += 1  # tidying up is best effort; the moves themselves succeeded
+    if prune_failures:
+        result.warnings.append(f"could not remove empty folder(s) after {prune_failures} move(s)")
     result.undo_log = log_path if done else None
     if not done:
         log_path.unlink()

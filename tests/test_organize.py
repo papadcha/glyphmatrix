@@ -754,3 +754,26 @@ def test_copy_is_removed_when_the_original_cannot_be_deleted(tmp_path, monkeypat
     assert (result.moved, result.errors) == (2, 1)
     assert (root / "arimo-Bold.ttf").exists()
     assert not list(root.rglob("Arimo Bold.ttf"))      # no untracked copy left behind
+
+
+def test_a_failing_prune_is_a_warning_not_a_crash(tmp_path, monkeypatch):
+    from glyphmatrix.core import organize as organize_mod
+
+    root = tmp_path / "fonts"
+    _three_arimo(root)
+    conn = connect(tmp_path / "lib.db")
+    init_schema(conn)
+    ingest_directory(conn, root)
+
+    def broken_prune(start, stop):
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(organize_mod, "_prune_empty_dirs", broken_prune)
+
+    result = apply_organize(plan_organize(root), root, conn=conn)
+
+    assert result.moved == 3
+    assert result.catalog.exists()
+    assert any("could not remove" in w for w in result.warnings)
+    paths = {r[0] for r in conn.execute("SELECT path FROM font_files")}
+    assert len(paths) == 3 and all(Path(p).exists() for p in paths)
