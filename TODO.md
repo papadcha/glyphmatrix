@@ -29,6 +29,11 @@ Type 1 (`.pfb`/`.pfa`), BDF, PCF, and FON are now fully parsed (see DONE.md). Re
   4. Name hints (Sans, Serif, Script, Mono, Stencil, Dingbats, Handwritten) only when nothing else.
 - [ ] `.TDF` (Bitstream font-pack description files, `(C)BITS.'92`): read as sidecar metadata; never treat as fonts.
 - [ ] GUI (Tauri vs Electron decision still open above).
+- [ ] (low) catalog: `write_catalog` lists items whose move failed (action `error`) at a destination they never reached — write rows only for `move`/`unchanged`.
+- [ ] (low) specimen: all A4 pages are kept in memory (~3.9 MB each) until one `save_all`; render page by page with Pillow `append=True` for folders of thousands of fonts.
+- [ ] OpenType italic/oblique (`fsSelection` bit 0/9, `macStyle`) is not read for TTF/OTF — only Type 1 and FON — and there is no schema column for it; today it exists only inside the style name. Needs a schema decision.
+- [ ] Variable fonts: only `fvar` axis ranges are stored; read the default `wght` (cross-check with `usWeightClass`) and the named instances.
+- [ ] Weight in the family name ("Foo Black" + style "Regular") is not read. Risky ("Black Chancery"); if done, only when `usWeightClass` is 400 and the style is "Regular".
 - [ ] undo_organize: separate failures (exit 1) from warnings (exit 0)
       - Currently 'problems' conflates real failures ('could not restore', 'missing')
         with soft warnings ('replaced stale DB row... Rescan recommended')
