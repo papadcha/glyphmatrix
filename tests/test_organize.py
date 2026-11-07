@@ -1,4 +1,5 @@
 import csv
+import json
 import shutil
 from pathlib import Path
 
@@ -620,3 +621,62 @@ def test_organize_updates_db_rows_scanned_through_a_symlink(tmp_path):
     paths = [r[0] for r in conn.execute("SELECT path FROM font_files")]
     assert len(paths) == 2
     assert all(Path(p).exists() for p in paths)
+
+
+def _three_arimo(root):
+    root.mkdir()
+    for style in ("Regular", "Bold", "Italic"):
+        build_test_font(root / f"arimo-{style}.ttf", family="Arimo", style=style,
+                        manufacturer="Monotype Imaging Inc.", version="Version 1.23")
+
+
+def test_files_missing_from_the_library_give_one_aggregate_warning(tmp_path):
+    root = tmp_path / "fonts"
+    _three_arimo(root)
+    conn = connect(tmp_path / "lib.db")
+    init_schema(conn)                                  # library exists but was never scanned
+
+    result = apply_organize(plan_organize(root), root, conn=conn)
+
+    assert result.moved == 3
+    assert len([w for w in result.warnings if "not found in the library" in w]) == 1
+    assert any(w.startswith("3 moved file(s) not found in the library") for w in result.warnings)
+
+
+def test_cli_json_includes_the_not_in_library_warning(tmp_path):
+    root = tmp_path / "fonts"
+    _three_arimo(root)
+    conn = connect(tmp_path / "lib.db")
+    init_schema(conn)
+    conn.close()
+
+    out = CliRunner().invoke(fontctl, ["--db", str(tmp_path / "lib.db"), "organize", str(root),
+                                       "--apply", "--json"])
+
+    assert out.exit_code == 0, out.output
+    warnings = json.loads(out.stdout)["result"]["warnings"]
+    assert any(w.startswith("3 moved file(s) not found in the library") for w in warnings)
+
+
+def test_cli_undo_prints_problems_to_stderr_and_exits_nonzero(tmp_path, monkeypatch):
+    from glyphmatrix.core import organize as organize_mod
+
+    root = tmp_path / "fonts"
+    _three_arimo(root)
+    result = apply_organize(plan_organize(root), root)
+    real_move = organize_mod._move_verified
+
+    def flaky(src, dst, expected_hash):
+        if dst.name == "arimo-Bold.ttf":
+            raise OSError("disk hiccup")
+        real_move(src, dst, expected_hash)
+
+    monkeypatch.setattr(organize_mod, "_move_verified", flaky)
+
+    out = CliRunner().invoke(fontctl, ["--db", str(tmp_path / "none.db"), "organize-undo",
+                                       str(result.undo_log)])
+
+    assert out.exit_code == 1
+    assert "restored 2" in out.stdout
+    assert "could not restore" in out.stderr and "disk hiccup" in out.stderr
+    assert "could not restore" not in out.stdout

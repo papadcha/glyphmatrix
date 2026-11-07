@@ -279,7 +279,9 @@ def organize_undo(ctx: click.Context, log: str) -> None:
     restored, problems = undo_organize(log, conn=_existing_db(ctx))
     click.echo(f"restored {restored}")
     for problem in problems:
-        click.echo(f"  ! {problem}")
+        click.echo(f"  ! {problem}", err=True)
+    if problems:
+        ctx.exit(1)
 
 
 @fontctl.command(name="list")
