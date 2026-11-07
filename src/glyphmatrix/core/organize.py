@@ -640,7 +640,7 @@ def write_catalog(plan: list[PlannedMove], dest: Path) -> Path:
     catalog = dest / CATALOG_NAME
     rows: dict[str, dict] = {}
     if catalog.exists():
-        with catalog.open(encoding="utf-8-sig", newline="") as fh:
+        with catalog.open(encoding="utf-8-sig", errors="surrogateescape", newline="") as fh:
             for row in csv.DictReader(fh):
                 if row.get("Path") and (dest / row["Path"]).exists():
                     rows[row["Path"]] = row
@@ -649,12 +649,17 @@ def write_catalog(plan: list[PlannedMove], dest: Path) -> Path:
             row = _catalog_row(item, dest)
             rows[row["Path"]] = row
     tmp = catalog.with_suffix(".tmp")
-    with tmp.open("w", encoding="utf-8-sig", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=_CATALOG_FIELDS, extrasaction="ignore")
-        writer.writeheader()
-        for key in sorted(rows, key=str.lower):
-            writer.writerow(rows[key])
-    os.replace(tmp, catalog)
+    try:
+        # surrogateescape: names from legacy-encoded archives/NAS are not valid UTF-8
+        with tmp.open("w", encoding="utf-8-sig", errors="surrogateescape", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=_CATALOG_FIELDS, extrasaction="ignore")
+            writer.writeheader()
+            for key in sorted(rows, key=str.lower):
+                writer.writerow(rows[key])
+        os.replace(tmp, catalog)
+    except BaseException:
+        _remove_quietly(tmp)
+        raise
     return catalog
 
 
@@ -739,7 +744,11 @@ def apply_organize(
                 log_path.unlink()
                 result.undo_log = None
             return result
-    result.catalog = write_catalog(plan, dest)
+    try:
+        result.catalog = write_catalog(plan, dest)
+    except (OSError, UnicodeError, csv.Error) as exc:
+        # every file has already moved and the DB is up to date; losing the report is not an error
+        result.warnings.append(f"could not write {CATALOG_NAME}: {exc}")
     return result
 
 
@@ -823,7 +832,7 @@ def write_inventory(root: str | Path, output: str | Path, vendor: str | None = N
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     tmp = output.with_name(output.name + ".tmp")
-    with tmp.open("w", encoding="utf-8-sig", newline="") as fh:
+    with tmp.open("w", encoding="utf-8-sig", errors="surrogateescape", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=_INVENTORY_FIELDS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)

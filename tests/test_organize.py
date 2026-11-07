@@ -994,3 +994,49 @@ def test_cli_reports_active_fonts_in_text_and_json(tmp_path):
     assert applied.exit_code == 0, applied.output
     result = json.loads(applied.stdout)["result"]
     assert result["moved"] == 2 and result["skipped_active"] == 1
+
+
+# --- the catalog is written after every file has moved: it must not take the run down with it ---
+
+def test_catalog_survives_a_non_utf8_file_name(tmp_path):
+    from glyphmatrix.core.organize import PlannedMove, write_catalog
+    from glyphmatrix.core.parser import parse_font_file
+
+    dest = tmp_path / "dest"
+    parsed = parse_font_file(build_test_font(tmp_path / "f.ttf", family="Cafe"))
+    odd_source = Path("/nas/caf\udce9.ttf")                    # Latin-1 byte on a UTF-8 system
+    item = PlannedMove(odd_source, dest / "X/Cafe/v1/Cafe Regular.ttf", "move", vendor="X", family="Cafe",
+                       style="Regular", version_label="v1", parsed=parsed)
+    item.flags.append(f"identical to {odd_source}")
+    (dest / "X/Cafe/v1").mkdir(parents=True)
+
+    catalog = write_catalog([item], dest)                      # must not raise UnicodeEncodeError
+
+    assert catalog.exists()
+    assert not list(dest.glob("*.tmp"))
+    write_catalog([], dest)                                    # and it reads back on the next run
+    assert catalog.exists()
+
+
+def test_catalog_failure_is_a_warning_and_leaves_no_temp_file(tmp_path, monkeypatch):
+    from glyphmatrix.core import organize as organize_mod
+
+    root = tmp_path / "fonts"
+    _three_arimo(root)
+    conn = connect(tmp_path / "lib.db")
+    init_schema(conn)
+    ingest_directory(conn, root)
+
+    def locked(src, dst):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(organize_mod.os, "replace", locked)
+
+    result = apply_organize(plan_organize(root), root, conn=conn)
+
+    assert result.moved == 3 and result.failure is None
+    assert result.catalog is None
+    assert any("_Font Catalog.csv" in w and "Permission denied" in w for w in result.warnings)
+    assert not list(root.glob("*.tmp"))
+    paths = {r[0] for r in conn.execute("SELECT path FROM font_files")}
+    assert len(paths) == 3 and all(Path(p).exists() for p in paths)
