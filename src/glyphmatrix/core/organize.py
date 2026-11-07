@@ -462,12 +462,16 @@ def plan_organize(
     return plan
 
 
-def _move_verified(src: Path, dst: Path, expected_hash: str) -> None:
+def _copy_verified(src: Path, dst: Path, expected_hash: str) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     if _sha256(dst) != expected_hash:
         dst.unlink()
         raise OSError(f"copy of {src} did not verify; original kept")
+
+
+def _move_verified(src: Path, dst: Path, expected_hash: str) -> None:
+    _copy_verified(src, dst, expected_hash)
     src.unlink()
 
 
@@ -625,15 +629,32 @@ def apply_organize(
             elif item.action == "unchanged":
                 result.unchanged += 1
             else:
+                # copy -> verify -> record in the undo log (durably) -> only then delete
+                # the original, so a failure at any point never loses the file.
                 try:
-                    _move_verified(item.source, item.destination, item.content_hash)
+                    _copy_verified(item.source, item.destination, item.content_hash)
                 except OSError as exc:
                     item.flags.append(str(exc))
                     item.action = "error"
                     result.errors += 1
                     continue
-                log.writerow([str(item.source), str(item.destination), item.content_hash])
-                fh.flush()
+                try:
+                    log.writerow([str(item.source), str(item.destination), item.content_hash])
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                except (OSError, UnicodeError) as exc:
+                    item.destination.unlink(missing_ok=True)
+                    item.flags.append(f"could not write undo log, original kept: {exc}")
+                    item.action = "error"
+                    result.errors += 1
+                    continue
+                try:
+                    item.source.unlink()
+                except OSError as exc:
+                    item.flags.append(str(exc))
+                    item.action = "error"
+                    result.errors += 1
+                    continue
                 done.append((item.source, item.destination))
                 result.moved += 1
 

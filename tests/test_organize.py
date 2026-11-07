@@ -680,3 +680,36 @@ def test_cli_undo_prints_problems_to_stderr_and_exits_nonzero(tmp_path, monkeypa
     assert "restored 2" in out.stdout
     assert "could not restore" in out.stderr and "disk hiccup" in out.stderr
     assert "could not restore" not in out.stdout
+
+
+# --- apply_organize: failures around the move must never lose a file or leave an untracked copy ---
+
+def test_undo_log_write_failure_keeps_the_original(tmp_path, monkeypatch):
+    from glyphmatrix.core import organize as organize_mod
+
+    root = tmp_path / "fonts"
+    _three_arimo(root)
+    real_writer = csv.writer
+
+    class FailingWriter:
+        def __init__(self, fh, *args, **kwargs):
+            self._w = real_writer(fh, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._w, name)
+
+        def writerow(self, row):
+            row = list(row)                       # DictWriter hands over a generator
+            if row and str(row[0]).endswith("arimo-Bold.ttf"):
+                raise OSError(28, "No space left on device")
+            return self._w.writerow(row)
+
+    monkeypatch.setattr(organize_mod.csv, "writer", FailingWriter)
+
+    result = apply_organize(plan_organize(root), root)
+
+    assert (result.moved, result.errors) == (2, 1)
+    assert (root / "arimo-Bold.ttf").exists()
+    assert not list(root.rglob("Arimo Bold.ttf"))
+    with result.undo_log.open(encoding="utf-8") as fh:
+        assert len(list(csv.DictReader(fh))) == 2
