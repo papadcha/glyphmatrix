@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import struct
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +15,22 @@ from fontTools.ttLib import TTCollection, TTFont
 
 from glyphmatrix.core.foundry import clean_designer, copyright_years, resolve_foundry
 from glyphmatrix.core.panose import classify_panose
+
+
+@contextmanager
+def quiet_fonttools() -> Iterator[None]:
+    """Hide fontTools' WARNING-level log noise ("'created' timestamp out of
+    range", "extra bytes in post.stringData array", ...) for the duration of
+    the block, then restore the previous level. Tables are decompiled lazily,
+    so the whole time the font is used must be inside the block, not just the
+    TTFont() call. Errors still get through."""
+    logger = logging.getLogger("fontTools")
+    previous = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        logger.setLevel(previous)
 
 # CSS-ish label per OS/2.usWidthClass (1-9). None if usWidthClass is absent/unknown.
 _WIDTH_CLASSES = {
@@ -594,20 +613,21 @@ def _parse_unsupported(path: Path, content_hash: str) -> ParsedFont:
 def _collection_members(path: Path) -> list[dict]:
     """Family/style/PostScript name of every font inside a .ttc/.otc."""
     members = []
-    collection = TTCollection(path, lazy=True)
-    try:
-        for index, font in enumerate(collection.fonts):
-            name_table = font["name"]
-            members.append(
-                {
-                    "index": index,
-                    "family": name_table.getBestFamilyName(),
-                    "style": name_table.getBestSubFamilyName(),
-                    "postscript_name": name_table.getDebugName(6),
-                }
-            )
-    finally:
-        collection.close()
+    with quiet_fonttools():
+        collection = TTCollection(path, lazy=True)
+        try:
+            for index, font in enumerate(collection.fonts):
+                name_table = font["name"]
+                members.append(
+                    {
+                        "index": index,
+                        "family": name_table.getBestFamilyName(),
+                        "style": name_table.getBestSubFamilyName(),
+                        "postscript_name": name_table.getDebugName(6),
+                    }
+                )
+        finally:
+            collection.close()
     return members
 
 
@@ -726,7 +746,7 @@ def parse_font_file(path: str | Path) -> ParsedFont:
 
     # For a collection, the first member stands for the file; the others are
     # listed in metadata (font_files.path is unique, so one row per file).
-    with TTFont(path, lazy=True, fontNumber=0) as font:
+    with quiet_fonttools(), TTFont(path, lazy=True, fontNumber=0) as font:
         name_table = font["name"]
         family_name = name_table.getBestFamilyName() or path.stem
         vendor_id = font["OS/2"].achVendID if "OS/2" in font else None

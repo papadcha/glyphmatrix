@@ -15,6 +15,7 @@ from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
 
+from glyphmatrix.core.parser import quiet_fonttools
 from glyphmatrix.core.scanner import is_skipped
 
 FONT_SUFFIXES = {".ttf", ".otf", ".ttc", ".otc", ".fon", ".pfb", ".pfa", ".bdf", ".pcf", ".woff", ".woff2"}
@@ -123,11 +124,12 @@ def _describe(path: Path, sample_text: str) -> tuple[str, str | None, str, str]:
     """(label, sample to draw or None, note, FreeType encoding)."""
     if path.suffix.lower() not in {".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2"}:
         return path.stem, None, f"no preview for {path.suffix.lower()} files", ""
-    try:
-        font = TTFont(path, lazy=True, fontNumber=0)
-    except Exception as exc:
-        return path.stem, None, f"unreadable: {exc}", ""
-    with font:
+    with quiet_fonttools():
+        try:
+            font = TTFont(path, lazy=True, fontNumber=0)
+        except Exception as exc:
+            return path.stem, None, f"unreadable: {exc}", ""
+    with quiet_fonttools(), font:
         names = font["name"]
         family = (names.getBestFamilyName() or path.stem).strip()
         style = (names.getBestSubFamilyName() or "Regular").strip()
