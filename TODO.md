@@ -31,7 +31,12 @@ Type 1 (`.pfb`/`.pfa`), BDF, PCF, and FON are now fully parsed (see DONE.md). Re
 - [ ] GUI (Tauri vs Electron decision still open above).
 - [ ] (low) catalog: `write_catalog` lists items whose move failed (action `error`) at a destination they never reached — write rows only for `move`/`unchanged`.
 - [ ] (low) specimen: all A4 pages are kept in memory (~3.9 MB each) until one `save_all`; render page by page with Pillow `append=True` for folders of thousands of fonts.
-- [ ] OpenType italic/oblique (`fsSelection` bit 0/9, `macStyle`) is not read for TTF/OTF — only Type 1 and FON — and there is no schema column for it; today it exists only inside the style name. Needs a schema decision.
+- [ ] future: distinguish italic / oblique / slanted (fsSelection, post.italicAngle, slnt axis)
+      - Currently only reads style from name table; fsSelection bit 0 (ITALIC), bit 9 (OBLIQUE), macStyle, post.italicAngle and the `slnt` axis are not read for TTF/OTF (only Type 1 and FON read italic)
+      - A font with "Oblique" in name but fsSelection bit 0 (ITALIC) is shown as "Oblique"
+      - A font with "Regular" in name but slanted (rare) is shown as upright
+      - Variable fonts with slnt axis are shown as a single upright face
+      - Requires new column (is_italic, is_oblique, italic_angle) or metadata_json
 - [ ] Variable fonts: only `fvar` axis ranges are stored; read the default `wght` (cross-check with `usWeightClass`) and the named instances.
 - [ ] Weight in the family name ("Foo Black" + style "Regular") is not read. Risky ("Black Chancery"); if done, only when `usWeightClass` is 400 and the style is "Regular".
 - [ ] undo_organize: separate failures (exit 1) from warnings (exit 0)
