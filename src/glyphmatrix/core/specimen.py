@@ -53,7 +53,9 @@ _UI_BOLD_CANDIDATES = (
     "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
     "C:/Windows/Fonts/arialbd.ttf",
 )
-_VERSION_DIR = re.compile(r"^(v\d|©\d|No Version$)")
+# Version folder names organize writes: "v1.23", a copyright year "1991"
+# (written "©1991" before, still found in organized libraries), "No Version".
+_VERSION_DIR = re.compile(r"^(v\d|©?\d{4}$|No Version$)")
 
 
 @dataclass

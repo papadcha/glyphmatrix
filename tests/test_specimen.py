@@ -1,3 +1,4 @@
+import pytest
 from click.testing import CliRunner
 
 from glyphmatrix.cli.main import fontctl
@@ -87,6 +88,15 @@ def test_top_level_fonts_get_no_heading(tmp_path):
     build_test_font(root / "Fam" / "v1.00" / "a.ttf", extra_codepoints=LATIN)
 
     assert collect(root)[0].group == ""
+
+
+@pytest.mark.parametrize("version_dir", ["1992", "©1992"])  # current and pre-ASCII organize layouts
+def test_copyright_year_folders_group_under_vendor(tmp_path, version_dir):
+    root = tmp_path / "fonts"
+    (root / "Bitstream" / "Charter BT" / version_dir).mkdir(parents=True)
+    build_test_font(root / "Bitstream" / "Charter BT" / version_dir / "a.ttf", extra_codepoints=LATIN)
+
+    assert collect(root)[0].group == "Bitstream"
 
 
 def test_samples_are_sized_by_ink_and_trimmed_by_words(tmp_path):

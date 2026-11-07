@@ -43,7 +43,7 @@ def test_version_label():
     assert version_label("Version 1.23", None) == ("v1.23", False)
     assert version_label("001.000", None) == ("v1.000", False)
     assert version_label("5.0d1", None) == ("v5.0", False)
-    assert version_label("Converted by ALLTYPE", "(c) 1999 Nick Curtis") == ("©1999", True)
+    assert version_label("Converted by ALLTYPE", "(c) 1999 Nick Curtis") == ("1999", True)
     assert version_label(None, None) == ("No Version", False)
 
 
@@ -54,9 +54,10 @@ def test_plan_builds_vendor_family_version_layout(tmp_path):
 
     assert plan["ARIMO-BOLD.TTF"].destination == root / "Monotype/Arimo/v1.23/Arimo Bold.ttf"
     assert plan["andlso.ttf"].destination == root / "Glyph Systems/Andalus/v5.92/Andalus Regular.ttf"
-    assert plan["DOSAPP.FON"].destination == root / "Microsoft/Terminal/©1991/Terminal Regular.fon"
+    assert plan["DOSAPP.FON"].destination == root / "Microsoft/Terminal/1991/Terminal Regular.fon"
     assert "copyright names several parties" in plan["andlso.ttf"].flags
     assert "no version; folder uses copyright year" in plan["DOSAPP.FON"].flags
+    assert all(str(p.destination.relative_to(root)).isascii() for p in plan.values())
     assert plan["ARIMO-BOLD.TTF"].flags == []
 
 
@@ -80,7 +81,7 @@ def test_apply_moves_writes_catalog_and_undo_restores(tmp_path):
     assert not (root / "ARIMO-BOLD.TTF").exists()
     with (root / CATALOG_NAME).open(encoding="utf-8-sig") as fh:
         rows = {r["Path"]: r for r in csv.DictReader(fh)}
-    assert rows["Microsoft/Terminal/©1991/Terminal Regular.fon"]["Copyright years"] == "1991"
+    assert rows["Microsoft/Terminal/1991/Terminal Regular.fon"]["Copyright years"] == "1991"
 
     restored, problems = undo_organize(result.undo_log)
 
@@ -271,7 +272,7 @@ def test_repeated_spaces_collapse_in_paths(tmp_path):
 
 def test_version_label_ignores_numbers_glued_to_words():
     assert version_label("2peas Sweet Pea", None) == ("No Version", False)
-    assert version_label("2peas Sweet Pea", "Typeface © Melissa Baxter, 2002.") == ("©2002", True)
+    assert version_label("2peas Sweet Pea", "Typeface © Melissa Baxter, 2002.") == ("2002", True)
     assert version_label("Version 2", None) == ("v2", False)
     assert version_label("Version 2; 2009", None) == ("v2", False)
 

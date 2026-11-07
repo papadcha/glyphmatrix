@@ -5,8 +5,10 @@ Layout: <dest>/<Vendor>/<Family>/<Version>/<Family> <Style>.<ext>
 
 - Vendor:  resolved foundry (manufacturer → vendor ID → copyright holder),
            shortened ("Monotype Imaging Inc." → "Monotype"); "Unknown" if none.
-- Version: "v<number>" from the version string; if there is none, "©<year>"
-           from the latest copyright year; otherwise "No Version".
+- Version: "v<number>" from the version string; if there is none, "<year>"
+           from the latest copyright year (no "©": sync tools, archives and
+           shell scripts handle non-ASCII folder names poorly); otherwise
+           "No Version".
 - Name:    family + style ("Normal" → "Regular"), lower-case extension.
 
 Safety (PROJECT_BRIEF principle #7): plan first, nothing moves without
@@ -102,14 +104,14 @@ def short_vendor(name: str | None) -> str:
 
 
 def version_label(version: str | None, copyright_text: str | None) -> tuple[str, bool]:
-    """('v1.23' | '©1991' | 'No Version', came_from_copyright)."""
+    """('v1.23' | '1991' | 'No Version', came_from_copyright)."""
     match = _VERSION_NUMBER.match(version or "")
     if match:
         major, _, minor = match.group(1).partition(".")
         return "v" + str(int(major)) + (f".{minor}" if minor else ""), False
     years = copyright_years(copyright_text)
     if years:
-        return f"©{max(years)}", True
+        return str(max(years)), True
     return NO_VERSION, False
 
 

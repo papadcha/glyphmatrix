@@ -67,8 +67,8 @@ asked. It arranges a folder as `Vendor/Family/Version/Family Style.ext`:
 
 - **Vendor**: Manufacturer (nameID 8) → known vendor ID → copyright holder;
   corporate suffixes dropped ("Monotype Imaging Inc." → "Monotype").
-- **Version**: `v1.23`; if the font has no version, `©1991` from the latest
-  copyright year; otherwise `No Version`.
+- **Version**: `v1.23`; if the font has no version, `1991` from the latest
+  copyright year (plain ASCII, no `©`); otherwise `No Version`.
 - Size variants that share a name ("KH Dot Hibiya 24/32") share one folder.
 - Fonts in one source folder whose names extend each other ("Flea Market",
   "Flea Market Block Regular") become one family; `--no-family-grouping` turns
