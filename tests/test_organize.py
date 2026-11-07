@@ -713,3 +713,44 @@ def test_undo_log_write_failure_keeps_the_original(tmp_path, monkeypatch):
     assert not list(root.rglob("Arimo Bold.ttf"))
     with result.undo_log.open(encoding="utf-8") as fh:
         assert len(list(csv.DictReader(fh))) == 2
+
+
+def test_partial_copy_is_removed_when_copy_fails(tmp_path, monkeypatch):
+    from glyphmatrix.core import organize as organize_mod
+
+    root = tmp_path / "fonts"
+    _three_arimo(root)
+    real_copy = organize_mod.shutil.copy2
+
+    def half_copy(src, dst, **kw):
+        if Path(src).name == "arimo-Bold.ttf":
+            Path(dst).write_bytes(b"truncated")
+            raise OSError(5, "I/O error")
+        return real_copy(src, dst, **kw)
+
+    monkeypatch.setattr(organize_mod.shutil, "copy2", half_copy)
+
+    result = apply_organize(plan_organize(root), root)
+
+    assert (result.moved, result.errors) == (2, 1)
+    assert (root / "arimo-Bold.ttf").exists()
+    assert not list(root.rglob("Arimo Bold.ttf"))
+
+
+def test_copy_is_removed_when_the_original_cannot_be_deleted(tmp_path, monkeypatch):
+    root = tmp_path / "fonts"
+    _three_arimo(root)
+    real_unlink = Path.unlink
+
+    def read_only_source(self, *a, **kw):
+        if self.name == "arimo-Bold.ttf":
+            raise PermissionError(13, "Permission denied")
+        return real_unlink(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "unlink", read_only_source)
+
+    result = apply_organize(plan_organize(root), root)
+
+    assert (result.moved, result.errors) == (2, 1)
+    assert (root / "arimo-Bold.ttf").exists()
+    assert not list(root.rglob("Arimo Bold.ttf"))      # no untracked copy left behind

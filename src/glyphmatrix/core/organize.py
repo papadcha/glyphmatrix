@@ -462,12 +462,23 @@ def plan_organize(
     return plan
 
 
+def _remove_quietly(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _copy_verified(src: Path, dst: Path, expected_hash: str) -> None:
+    """Copy src to dst and check the hash. On any failure no partial copy is left."""
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-    if _sha256(dst) != expected_hash:
-        dst.unlink()
-        raise OSError(f"copy of {src} did not verify; original kept")
+    try:
+        shutil.copy2(src, dst)
+        if _sha256(dst) != expected_hash:
+            raise OSError(f"copy of {src} did not verify; original kept")
+    except Exception:
+        _remove_quietly(dst)
+        raise
 
 
 def _move_verified(src: Path, dst: Path, expected_hash: str) -> None:
@@ -643,7 +654,7 @@ def apply_organize(
                     fh.flush()
                     os.fsync(fh.fileno())
                 except (OSError, UnicodeError) as exc:
-                    item.destination.unlink(missing_ok=True)
+                    _remove_quietly(item.destination)
                     item.flags.append(f"could not write undo log, original kept: {exc}")
                     item.action = "error"
                     result.errors += 1
@@ -651,6 +662,8 @@ def apply_organize(
                 try:
                     item.source.unlink()
                 except OSError as exc:
+                    # original can't be deleted (read-only share...): keep it, drop the copy
+                    _remove_quietly(item.destination)
                     item.flags.append(str(exc))
                     item.action = "error"
                     result.errors += 1
