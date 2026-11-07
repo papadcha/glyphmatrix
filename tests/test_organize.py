@@ -1,5 +1,6 @@
 import csv
 import shutil
+from pathlib import Path
 
 from click.testing import CliRunner
 
@@ -465,3 +466,33 @@ def test_in_place_organize_does_not_see_its_own_files_as_duplicates(tmp_path):
     root = _messy_folder(tmp_path / "fonts")
 
     assert {p.action for p in plan_organize(root)} == {"move"}
+
+
+def test_undo_continues_past_a_failed_move_and_keeps_db_in_step(tmp_path, monkeypatch):
+    from glyphmatrix.core import organize as organize_mod
+
+    root = tmp_path / "fonts"
+    root.mkdir()
+    for style in ("Regular", "Bold", "Italic"):
+        build_test_font(root / f"arimo-{style}.ttf", family="Arimo", style=style,
+                        manufacturer="Monotype Imaging Inc.", version="Version 1.23")
+    conn = connect(tmp_path / "lib.db")
+    init_schema(conn)
+    ingest_directory(conn, root)
+    result = apply_organize(plan_organize(root), root, conn=conn)
+
+    real_move = organize_mod._move_verified
+
+    def flaky(src, dst, expected_hash):
+        if dst.name == "arimo-Bold.ttf":
+            raise OSError("disk hiccup")
+        real_move(src, dst, expected_hash)
+
+    monkeypatch.setattr(organize_mod, "_move_verified", flaky)
+    restored, problems = undo_organize(result.undo_log, conn=conn)
+
+    assert restored == 2
+    assert len(problems) == 1 and "disk hiccup" in problems[0]
+    paths = {r[0] for r in conn.execute("SELECT path FROM font_files")}
+    assert all(Path(p).exists() for p in paths)
+    assert str(root / "arimo-Regular.ttf") in paths

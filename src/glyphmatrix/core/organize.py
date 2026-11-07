@@ -611,7 +611,11 @@ def undo_organize(log_path: str | Path, conn: sqlite3.Connection | None = None) 
         if _sha256(moved) != row["sha256"]:
             problems.append(f"changed since organize, left alone: {moved}")
             continue
-        _move_verified(moved, original, row["sha256"])
+        try:
+            _move_verified(moved, original, row["sha256"])
+        except OSError as exc:
+            problems.append(f"could not restore {moved}: {exc}")
+            continue
         back.append((moved, original))
         restored += 1
     for moved, _ in back:
