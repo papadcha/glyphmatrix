@@ -29,3 +29,7 @@ Type 1 (`.pfb`/`.pfa`), BDF, PCF, and FON are now fully parsed (see DONE.md). Re
   4. Name hints (Sans, Serif, Script, Mono, Stencil, Dingbats, Handwritten) only when nothing else.
 - [ ] `.TDF` (Bitstream font-pack description files, `(C)BITS.'92`): read as sidecar metadata; never treat as fonts.
 - [ ] GUI (Tauri vs Electron decision still open above).
+- [ ] future: store resolved paths on ingest (needs migration/rescan strategy for existing libraries)
+      - Also fixes G edge case: relative/absolute/symlink mismatch
+      - Also fixes performance: no full table scan on fallback
+      - Breaking change: requires migration or rescan for existing libraries

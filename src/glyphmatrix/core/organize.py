@@ -489,6 +489,26 @@ def _prune_empty_dirs(start: Path, stop: Path) -> None:
         current = current.parent
 
 
+def _find_row_id(conn: sqlite3.Connection, path: Path) -> int | None:
+    """Id of the font_files row for this file, however the DB spelled its path
+    (as given, relative, or through a symlink). Exact match first; otherwise
+    rows with the same file name are compared by their resolved location."""
+    row = conn.execute("SELECT id FROM font_files WHERE path = ?", (str(path),)).fetchone()
+    if row is not None:
+        return row[0]
+    # NOTE: fallback does a full table scan (no index on filename).
+    # Acceptable for libraries up to ~100k rows. If this becomes a bottleneck,
+    # add an index on basename(path) or store resolved paths on ingest (see TODO).
+    wanted = path.parent.resolve() / path.name
+    for cand_id, cand_path in conn.execute(
+        "SELECT id, path FROM font_files WHERE filename = ?", (path.name,)
+    ).fetchall():
+        cand = Path(cand_path)
+        if cand.parent.resolve() / cand.name == wanted:
+            return cand_id
+    return None
+
+
 def _update_db_paths(conn: sqlite3.Connection, moves: list[tuple[Path, Path]]) -> list[str]:
     """Point font_files rows at the new paths, all-or-nothing. Returns warnings.
 
@@ -498,17 +518,17 @@ def _update_db_paths(conn: sqlite3.Connection, moves: list[tuple[Path, Path]]) -
     and the moved row keeps its old path. Any other DB error rolls everything
     back and is re-raised."""
     warnings: list[str] = []
+    missing: list[Path] = []
     try:
         for old, new in moves:
-            row = conn.execute("SELECT id FROM font_files WHERE path = ?", (str(old),)).fetchone()
-            if row is None:
+            row_id = _find_row_id(conn, old)
+            if row_id is None:
+                missing.append(old)
                 continue
-            clash = conn.execute(
-                "SELECT id FROM font_files WHERE path = ? AND id != ?", (str(new), row[0])
-            ).fetchone()
-            if clash is not None:
+            clash_id = _find_row_id(conn, new)
+            if clash_id is not None and clash_id != row_id:
                 try:
-                    conn.execute("DELETE FROM font_files WHERE id = ?", (clash[0],))
+                    conn.execute("DELETE FROM font_files WHERE id = ?", (clash_id,))
                 except sqlite3.IntegrityError:
                     warnings.append(
                         f"stale DB row at {new} has dependencies and was left in place; "
@@ -518,12 +538,17 @@ def _update_db_paths(conn: sqlite3.Connection, moves: list[tuple[Path, Path]]) -
                 warnings.append(f"replaced stale DB row at {new}. Rescan recommended")
             conn.execute(
                 "UPDATE font_files SET path = ?, filename = ? WHERE id = ?",
-                (str(new), new.name, row[0]),
+                (str(new), new.name, row_id),
             )
         conn.commit()
     except sqlite3.Error:
         conn.rollback()
         raise
+    if missing:
+        warnings.append(
+            f"{len(missing)} moved file(s) not found in the library, not updated "
+            f"(first: {missing[0]}). Rescan recommended"
+        )
     return warnings
 
 

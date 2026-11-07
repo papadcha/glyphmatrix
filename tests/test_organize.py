@@ -580,3 +580,43 @@ def test_cli_exits_nonzero_and_prints_warnings(tmp_path):
     done = runner.invoke(fontctl, [*db, "organize", str(root), "--apply"])
     assert done.exit_code == 0, done.output
     assert "warning: replaced stale DB row" in done.output
+
+
+def _arimo_pair(root):
+    root.mkdir()
+    for style in ("Regular", "Bold"):
+        build_test_font(root / f"arimo-{style}.ttf", family="Arimo", style=style,
+                        manufacturer="Monotype Imaging Inc.", version="Version 1.23")
+
+
+def test_organize_updates_db_rows_scanned_with_a_relative_path(tmp_path, monkeypatch):
+    root = tmp_path / "fonts"
+    _arimo_pair(root)
+    conn = connect(tmp_path / "lib.db")
+    init_schema(conn)
+    monkeypatch.chdir(tmp_path)
+    ingest_directory(conn, Path("fonts"))          # stored as "fonts/arimo-Bold.ttf"
+
+    result = apply_organize(plan_organize(root.resolve()), root.resolve(), conn=conn)
+
+    assert result.moved == 2
+    paths = [r[0] for r in conn.execute("SELECT path FROM font_files")]
+    assert len(paths) == 2
+    assert all(Path(p).exists() for p in paths)    # today: still the old relative paths
+
+
+def test_organize_updates_db_rows_scanned_through_a_symlink(tmp_path):
+    real = tmp_path / "real"
+    _arimo_pair(real)
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    conn = connect(tmp_path / "lib.db")
+    init_schema(conn)
+    ingest_directory(conn, link)                   # stored as ".../link/arimo-Bold.ttf"
+
+    result = apply_organize(plan_organize(real), real, conn=conn)
+
+    assert result.moved == 2
+    paths = [r[0] for r in conn.execute("SELECT path FROM font_files")]
+    assert len(paths) == 2
+    assert all(Path(p).exists() for p in paths)
