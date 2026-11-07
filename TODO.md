@@ -29,6 +29,11 @@ Type 1 (`.pfb`/`.pfa`), BDF, PCF, and FON are now fully parsed (see DONE.md). Re
   4. Name hints (Sans, Serif, Script, Mono, Stencil, Dingbats, Handwritten) only when nothing else.
 - [ ] `.TDF` (Bitstream font-pack description files, `(C)BITS.'92`): read as sidecar metadata; never treat as fonts.
 - [ ] GUI (Tauri vs Electron decision still open above).
+- [ ] future: scanner allowlist for Flatpak/Snap font dirs
+      - ~/.var/app/*/data/fonts (Flatpak)
+      - ~/snap/*/fonts (Snap)
+      - .local/share/fonts case-insensitive
+- [ ] test: ingest savepoint failure inside _resolve_known_face
 - [ ] (low-medium) Non-Latin names: family/style are read through fontTools `getBestFamilyName`/`getBestSubFamilyName` (Windows English first, then any Windows language, then Mac Roman; checked with CJK, Arabic and Mac-Roman-only fonts) and non-Latin names go into folder and file names as they are. But there is no test with a non-Latin family/style/file name (the only non-ASCII in tests is "©"), and:
       - a style written in another language ("Regular" as Arabic) is not recognised as Regular (size grouping, file names, weight fallback all compare English words);
       - `list`/`info`/`--json` print JSON with `ensure_ascii` on (escaped `\uXXXX`), only `organize --json` uses `ensure_ascii=False`;
