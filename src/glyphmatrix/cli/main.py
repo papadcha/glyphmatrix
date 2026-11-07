@@ -207,6 +207,8 @@ def organize(
                 k: str(v) if isinstance(v, Path) else v for k, v in asdict(result).items()
             }
         click.echo(json.dumps(payload, ensure_ascii=False))
+        if do_apply and result.failure:
+            ctx.exit(1)
         return
 
     for item in plan:
@@ -232,7 +234,13 @@ def organize(
     click.echo(f"moved {result.moved}, errors {result.errors}")
     if result.undo_log:
         click.echo(f"undo log: {result.undo_log}")
-    click.echo(f"catalog: {result.catalog}")
+    if result.catalog:
+        click.echo(f"catalog: {result.catalog}")
+    for warning in result.warnings:
+        click.echo(f"warning: {warning}", err=True)
+    if result.failure:
+        click.echo(f"error: {result.failure}", err=True)
+        ctx.exit(1)
 
 
 @fontctl.command()

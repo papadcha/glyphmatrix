@@ -496,3 +496,87 @@ def test_undo_continues_past_a_failed_move_and_keeps_db_in_step(tmp_path, monkey
     paths = {r[0] for r in conn.execute("SELECT path FROM font_files")}
     assert all(Path(p).exists() for p in paths)
     assert str(root / "arimo-Regular.ttf") in paths
+
+
+def _two_arimo_in_db(tmp_path):
+    root = tmp_path / "fonts"
+    root.mkdir()
+    for style in ("Regular", "Bold"):
+        build_test_font(root / f"arimo-{style}.ttf", family="Arimo", style=style,
+                        manufacturer="Monotype Imaging Inc.", version="Version 1.23")
+    conn = connect(tmp_path / "lib.db")
+    init_schema(conn)
+    ingest_directory(conn, root)
+    plan = plan_organize(root)
+    target = next(p.destination for p in plan if p.destination.name.endswith("Bold.ttf"))
+    return root, conn, plan, target
+
+
+def _plant_stale_row(conn, target):
+    """A row left by an earlier scan of the destination; the file is gone from disk."""
+    cur = conn.execute(
+        "INSERT INTO font_files (path, filename, content_hash, source) VALUES (?, ?, 'old', 'user')",
+        (str(target), target.name),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def test_stale_db_row_at_destination_is_replaced_with_a_warning(tmp_path):
+    root, conn, plan, target = _two_arimo_in_db(tmp_path)
+    _plant_stale_row(conn, target)
+
+    result = apply_organize(plan, root, conn=conn)
+
+    assert result.moved == 2
+    assert result.failure is None
+    assert result.catalog.exists()
+    assert any("stale DB row" in w and "Rescan recommended" in w for w in result.warnings)
+    paths = {r[0] for r in conn.execute("SELECT path FROM font_files")}
+    assert len(paths) == 2 and all(Path(p).exists() for p in paths)
+
+
+def test_stale_db_row_with_dependencies_is_kept_and_reported(tmp_path):
+    root, conn, plan, target = _two_arimo_in_db(tmp_path)
+    stale_id = _plant_stale_row(conn, target)
+    conn.execute("INSERT INTO activations (font_file_id, platform, state) VALUES (?, 'macos', 'installed')",
+                 (stale_id,))
+    conn.commit()
+
+    result = apply_organize(plan, root, conn=conn)
+
+    assert result.moved == 2
+    assert result.failure is None
+    assert result.catalog.exists()
+    assert any("has dependencies" in w for w in result.warnings)
+    assert conn.execute("SELECT 1 FROM font_files WHERE id = ?", (stale_id,)).fetchone()
+
+
+def test_db_failure_rolls_back_db_and_moves_files_back(tmp_path):
+    root, conn, plan, _ = _two_arimo_in_db(tmp_path)
+    before = sorted(tuple(r) for r in conn.execute("SELECT path, filename FROM font_files"))
+    conn.execute(
+        "CREATE TRIGGER boom BEFORE UPDATE ON font_files WHEN NEW.filename = 'Arimo Bold.ttf' "
+        "BEGIN SELECT RAISE(ABORT, 'boom'); END"
+    )
+    names_before = sorted(p.name for p in root.iterdir())
+
+    result = apply_organize(plan, root, conn=conn)
+
+    assert result.failure and "boom" in result.failure
+    assert result.moved == 0
+    assert result.catalog is None
+    assert sorted(p.name for p in root.iterdir()) == names_before
+    assert sorted(tuple(r) for r in conn.execute("SELECT path, filename FROM font_files")) == before
+
+
+def test_cli_exits_nonzero_and_prints_warnings(tmp_path):
+    root, conn, plan, target = _two_arimo_in_db(tmp_path)
+    _plant_stale_row(conn, target)
+    conn.close()
+    runner = CliRunner()
+    db = ["--db", str(tmp_path / "lib.db")]
+
+    done = runner.invoke(fontctl, [*db, "organize", str(root), "--apply"])
+    assert done.exit_code == 0, done.output
+    assert "warning: replaced stale DB row" in done.output

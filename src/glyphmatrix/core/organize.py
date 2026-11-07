@@ -86,6 +86,8 @@ class OrganizeResult:
     errors: int = 0
     undo_log: Path | None = None
     catalog: Path | None = None
+    warnings: list[str] = field(default_factory=list)
+    failure: str | None = None  # set when the library DB could not be updated and the moves were rolled back
 
 
 def short_vendor(name: str | None) -> str:
@@ -487,13 +489,42 @@ def _prune_empty_dirs(start: Path, stop: Path) -> None:
         current = current.parent
 
 
-def _update_db_paths(conn: sqlite3.Connection, moves: list[tuple[Path, Path]]) -> None:
-    for old, new in moves:
-        conn.execute(
-            "UPDATE font_files SET path = ?, filename = ? WHERE path = ?",
-            (str(new), new.name, str(old)),
-        )
-    conn.commit()
+def _update_db_paths(conn: sqlite3.Connection, moves: list[tuple[Path, Path]]) -> list[str]:
+    """Point font_files rows at the new paths, all-or-nothing. Returns warnings.
+
+    A different row already sitting on the new path can only describe a file
+    that is no longer there (the move just put this one there), so it is
+    stale: it is deleted, or, when other tables still refer to it, left alone
+    and the moved row keeps its old path. Any other DB error rolls everything
+    back and is re-raised."""
+    warnings: list[str] = []
+    try:
+        for old, new in moves:
+            row = conn.execute("SELECT id FROM font_files WHERE path = ?", (str(old),)).fetchone()
+            if row is None:
+                continue
+            clash = conn.execute(
+                "SELECT id FROM font_files WHERE path = ? AND id != ?", (str(new), row[0])
+            ).fetchone()
+            if clash is not None:
+                try:
+                    conn.execute("DELETE FROM font_files WHERE id = ?", (clash[0],))
+                except sqlite3.IntegrityError:
+                    warnings.append(
+                        f"stale DB row at {new} has dependencies and was left in place; "
+                        f"the moved file's row still has its old path. Rescan recommended"
+                    )
+                    continue
+                warnings.append(f"replaced stale DB row at {new}. Rescan recommended")
+            conn.execute(
+                "UPDATE font_files SET path = ?, filename = ? WHERE id = ?",
+                (str(new), new.name, row[0]),
+            )
+        conn.commit()
+    except sqlite3.Error:
+        conn.rollback()
+        raise
+    return warnings
 
 
 _CATALOG_FIELDS = [
@@ -583,11 +614,22 @@ def apply_organize(
 
     for old, _ in done:
         _prune_empty_dirs(old.parent, source)
-    if conn is not None and done:
-        _update_db_paths(conn, done)
     result.undo_log = log_path if done else None
     if not done:
         log_path.unlink()
+    if conn is not None and done:
+        try:
+            result.warnings += _update_db_paths(conn, done)
+        except sqlite3.Error as exc:
+            # DB is rolled back; put the files back so disk and library agree.
+            restored, problems = undo_organize(log_path)
+            result.moved = len(done) - restored
+            result.failure = f"library DB update failed ({exc}); moves rolled back, {restored} file(s) restored"
+            result.warnings += problems
+            if not problems:
+                log_path.unlink()
+                result.undo_log = None
+            return result
     result.catalog = write_catalog(plan, dest)
     return result
 
@@ -621,7 +663,10 @@ def undo_organize(log_path: str | Path, conn: sqlite3.Connection | None = None) 
     for moved, _ in back:
         _prune_empty_dirs(moved.parent, log_path.parent)
     if conn is not None and back:
-        _update_db_paths(conn, back)
+        try:
+            problems += _update_db_paths(conn, back)
+        except sqlite3.Error as exc:
+            problems.append(f"files restored but library DB not updated ({exc}); rescan recommended")
     return restored, problems
 
 
