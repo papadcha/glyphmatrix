@@ -29,6 +29,10 @@ Type 1 (`.pfb`/`.pfa`), BDF, PCF, and FON are now fully parsed (see DONE.md). Re
   4. Name hints (Sans, Serif, Script, Mono, Stencil, Dingbats, Handwritten) only when nothing else.
 - [ ] `.TDF` (Bitstream font-pack description files, `(C)BITS.'92`): read as sidecar metadata; never treat as fonts.
 - [ ] GUI (Tauri vs Electron decision still open above).
+- [ ] organize/undo: DB update per file or per batch, so a kill mid-run cannot leave disk and library out of sync (today `_update_db_paths` runs once at the end).
+      - Conflicts with the all-or-nothing rollback added for review finding F: once early batches are committed, a later DB failure can no longer roll them back, so rollback would have to move those files back and revert their rows.
+      - Alternative that keeps the single transaction: `fontctl` command (or `scan` rescan) that re-syncs `font_files.path` from an undo log after an interrupted run.
+      - `organize-undo` problems list mixes real failures ("could not restore") with soft DB warnings ("Rescan recommended"); both give exit code 1. Consider splitting.
 - [ ] future: store resolved paths on ingest (needs migration/rescan strategy for existing libraries)
       - Also fixes G edge case: relative/absolute/symlink mismatch
       - Also fixes performance: no full table scan on fallback
