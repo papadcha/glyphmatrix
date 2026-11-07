@@ -628,7 +628,7 @@ def _catalog_row(item: PlannedMove, dest: Path) -> dict:
         "Characters": parsed.glyph_count,
         "Copyright years": ", ".join(str(y) for y in copyright_years(parsed.copyright)),
         "Copyright": parsed.copyright or "",
-        "Path": str(item.destination.relative_to(dest)),
+        "Path": item.destination.relative_to(dest).as_posix(),
         "Original path": str(item.source),
         "Review": "; ".join(item.flags),
     }
@@ -798,7 +798,7 @@ def write_inventory(root: str | Path, output: str | Path, vendor: str | None = N
         try:
             parsed = parse_font_file(path)
         except Exception as exc:
-            rows.append({"Path": str(path.relative_to(root)), "Format": path.suffix.lower().lstrip("."),
+            rows.append({"Path": path.relative_to(root).as_posix(), "Format": path.suffix.lower().lstrip("."),
                          "Family": f"(could not read: {exc})"})
             continue
         family = parsed.family_name.strip() or path.stem
@@ -818,7 +818,7 @@ def write_inventory(root: str | Path, output: str | Path, vendor: str | None = N
             "Characters": parsed.glyph_count,
             "Copyright years": ", ".join(str(y) for y in copyright_years(parsed.copyright)),
             "Copyright": parsed.copyright or "",
-            "Path": str(path.relative_to(root)),
+            "Path": path.relative_to(root).as_posix(),
         })
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -59,7 +59,7 @@ def test_plan_builds_vendor_family_version_layout(tmp_path):
     assert plan["DOSAPP.FON"].destination == root / "Microsoft/Terminal/1991/Terminal Regular.fon"
     assert "copyright names several parties" in plan["andlso.ttf"].flags
     assert "no version; folder uses copyright year" in plan["DOSAPP.FON"].flags
-    assert all(str(p.destination.relative_to(root)).isascii() for p in plan.values())
+    assert all(p.destination.relative_to(root).as_posix().isascii() for p in plan.values())
     assert plan["ARIMO-BOLD.TTF"].flags == []
 
 
@@ -146,7 +146,7 @@ def test_cli_dry_run_then_apply(tmp_path):
 
     dry = runner.invoke(fontctl, [*db, "organize", str(root)])
     assert dry.exit_code == 0, dry.output
-    assert "-> Monotype/Arimo/v1.23/Arimo Bold.ttf" in dry.output
+    assert "-> Monotype/Arimo/v1.23/Arimo Bold.ttf" in dry.output.replace("\\", "/")  # native separators
     assert "dry run: nothing moved" in dry.output
     assert (root / "ARIMO-BOLD.TTF").exists()
 
@@ -168,7 +168,7 @@ def test_size_variants_sharing_a_base_are_grouped(tmp_path):
                         version="Version 1.00", extra_glyph=name.endswith("32"),
                         a_glyph_size=500 + len(name))
 
-    targets = sorted(str(p.destination.relative_to(root)) for p in plan_organize(root))
+    targets = sorted(p.destination.relative_to(root).as_posix() for p in plan_organize(root))
 
     assert targets == [
         "X/Bauhaus 93/v1.00/Bauhaus 93 Regular.ttf",
@@ -305,8 +305,9 @@ def test_cli_case_option(tmp_path):
     result = CliRunner().invoke(fontctl, ["--db", str(tmp_path / "x.db"), "organize", str(root),
                                           "--case", "sentence"])
 
-    assert "-> Monotype/Arimo/v1.23/Arimo bold.ttf" in result.output
-    assert "-> Glyph Systems/Andalus/v5.92/Andalus regular.ttf" in result.output
+    out = result.output.replace("\\", "/")  # the CLI prints native separators
+    assert "-> Monotype/Arimo/v1.23/Arimo bold.ttf" in out
+    assert "-> Glyph Systems/Andalus/v5.92/Andalus regular.ttf" in out
 
 
 def test_names_equal_after_recasing_do_not_collide(tmp_path):
@@ -338,7 +339,7 @@ def _family_folder(root):
 def test_fonts_extending_a_name_in_one_folder_become_one_family(tmp_path):
     root = _family_folder(tmp_path / "fonts")
 
-    targets = sorted(str(p.destination.relative_to(root)) for p in plan_organize(root))
+    targets = sorted(p.destination.relative_to(root).as_posix() for p in plan_organize(root))
 
     assert targets == [
         "X/2Peas Flea Market/v1.00/2Peas Flea Market Block Irregular.ttf",
@@ -394,7 +395,7 @@ def test_abbreviated_styles_join_their_family(tmp_path):
         build_test_font(root / name, family=family, style=style, manufacturer="URW",
                         version="Version 1.005", a_glyph_size=500 + i)
 
-    targets = {p.source.name: str(p.destination.relative_to(root)) for p in plan_organize(root)}
+    targets = {p.source.name: p.destination.relative_to(root).as_posix() for p in plan_organize(root)}
 
     assert targets["tmed.ttf"] == "URW/AvantGarGotItcT/v1.005/AvantGarGotItcT Medium Italic.ttf"
     assert targets["tdemcon.ttf"] == "URW/AvantGarGotItcT/v1.005/AvantGarGotItcT Demi Condensed.ttf"
@@ -457,7 +458,7 @@ def test_identical_file_already_in_destination_is_a_duplicate(tmp_path):
     plan = {p.source.name: p for p in plan_organize(new, lib)}
 
     assert plan["copy of arimo.ttf"].action == "duplicate"
-    assert plan["copy of arimo.ttf"].flags == [
+    assert [f.replace("\\", "/") for f in plan["copy of arimo.ttf"].flags] == [
         "already in destination: Monotype/Series/Arimo/v1.23/Arimo Bold.ttf"]
     assert plan["other arimo.ttf"].action == "move"
     assert plan["other arimo.ttf"].destination == lib / "Monotype/Arimo/v1.23/Arimo Bold.ttf"
@@ -916,7 +917,7 @@ def test_size_grouping_keeps_the_style_of_non_regular_members(tmp_path):
 
     plan = plan_organize(root)
 
-    targets = sorted(str(p.destination.relative_to(root)) for p in plan)
+    targets = sorted(p.destination.relative_to(root).as_posix() for p in plan)
     assert targets == [
         "X/KH Dot Hibiya/v1.00/KH Dot Hibiya 24 Bold.ttf",
         "X/KH Dot Hibiya/v1.00/KH Dot Hibiya 24.ttf",
