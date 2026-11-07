@@ -777,3 +777,17 @@ def test_a_failing_prune_is_a_warning_not_a_crash(tmp_path, monkeypatch):
     assert any("could not remove" in w for w in result.warnings)
     paths = {r[0] for r in conn.execute("SELECT path FROM font_files")}
     assert len(paths) == 3 and all(Path(p).exists() for p in paths)
+
+
+def test_undo_reads_a_log_with_non_utf8_file_names(tmp_path):
+    log = tmp_path / "_organize-test.csv"
+    odd = "/nas/caf\udce9.ttf"                          # a Latin-1 byte, as surrogateescape
+    with log.open("w", encoding="utf-8", errors="surrogateescape", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["original_path", "new_path", "sha256"])
+        w.writerow([odd, "/nas/Vendor/Cafe/v1/Cafe Regular.ttf", "0" * 64])
+
+    restored, problems = undo_organize(log)            # must not raise UnicodeDecodeError
+
+    assert restored == 0
+    assert len(problems) == 1

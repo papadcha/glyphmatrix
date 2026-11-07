@@ -629,7 +629,7 @@ def apply_organize(
     done: list[tuple[Path, Path]] = []
 
     log_path = dest / f"{UNDO_LOG_PREFIX}{datetime.now():%Y%m%d-%H%M%S}.csv"
-    with log_path.open("w", encoding="utf-8", newline="") as fh:
+    with log_path.open("w", encoding="utf-8", errors="surrogateescape", newline="") as fh:
         log = csv.writer(fh)
         log.writerow(["original_path", "new_path", "sha256"])
         for item in plan:
@@ -705,7 +705,8 @@ def undo_organize(log_path: str | Path, conn: sqlite3.Connection | None = None) 
     restored = 0
     problems: list[str] = []
     back: list[tuple[Path, Path]] = []
-    with log_path.open(encoding="utf-8", newline="") as fh:
+    # surrogateescape: file names from legacy-encoded archives/NAS are not valid UTF-8
+    with log_path.open(encoding="utf-8", errors="surrogateescape", newline="") as fh:
         rows = list(csv.DictReader(fh))
     for row in reversed(rows):
         original, moved = Path(row["original_path"]), Path(row["new_path"])
