@@ -701,6 +701,11 @@ _WIDTH_WORDS = {"condensed", "cond", "compressed", "narrow", "expanded", "extend
 _STYLE_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+")
 
 
+# Original 1-9 usWeightClass scale -> 100-900. 4 "Semi-light" has no standard
+# weight between Light and Regular; it maps to Light.
+_LEGACY_WEIGHT_SCALE = {1: 100, 2: 200, 3: 300, 4: 300, 5: 400, 6: 600, 7: 700, 8: 800, 9: 900}
+
+
 def _weight_from_style(style: str | None) -> int | None:
     """Weight named by the style ("Black" -> 900, "ExtraBold" -> 800,
     "Demi Italic" -> 600). None when the style names no weight, or names
@@ -820,9 +825,10 @@ def parse_font_file(path: str | Path) -> ParsedFont:
 
         os2_weight = weight
         weight_source = None
-        # Some old fonts store usWeightClass on a 1-9 scale (5 = normal).
+        # Some early fonts use the original TrueType 1-9 scale (Apple's reference
+        # manual, table 3), where 5 is "Medium (normal)": Regular, 400, not 500.
         if weight is not None and 1 <= weight <= 9:
-            weight *= 100
+            weight = _LEGACY_WEIGHT_SCALE[weight]
             weight_source = "os2_1_to_9_scale"
         # Many fonts leave usWeightClass at the 400 default whatever the
         # weight; trust the style name then. A non-default value is kept as is.

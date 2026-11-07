@@ -95,8 +95,14 @@ def test_width_only_style_keeps_400(tmp_path):
     assert parsed.weight == 400
 
 
-@pytest.mark.parametrize("legacy,expected", [(1, 100), (3, 300), (5, 500), (7, 700), (9, 900)])
-def test_legacy_1_to_9_weight_class_is_scaled(tmp_path, legacy, expected):
+# The original TrueType 1-9 scale (Apple's reference manual, table 3): 5 = "Medium (normal)",
+# which is Regular (400) on the 100-900 scale, not Medium (500). 4 "Semi-light" has no
+# standard CSS weight; it maps to Light (300).
+@pytest.mark.parametrize(
+    "legacy,expected",
+    [(1, 100), (2, 200), (3, 300), (4, 300), (5, 400), (6, 600), (7, 700), (8, 800), (9, 900)],
+)
+def test_legacy_1_to_9_weight_class_is_mapped(tmp_path, legacy, expected):
     parsed = parse_font_file(build_test_font(tmp_path / "f.ttf", style="Regular", weight=legacy))
 
     assert parsed.weight == expected
@@ -104,12 +110,13 @@ def test_legacy_1_to_9_weight_class_is_scaled(tmp_path, legacy, expected):
     assert parsed.metadata["os2_weight_class"] == legacy
 
 
-def test_legacy_4_is_normal_so_style_name_still_applies(tmp_path):
-    parsed = parse_font_file(build_test_font(tmp_path / "f.ttf", style="Black", weight=4))
+@pytest.mark.parametrize("style,expected", [("Black", 900), ("Bold", 700)])
+def test_legacy_5_is_normal_so_style_name_still_applies(tmp_path, style, expected):
+    parsed = parse_font_file(build_test_font(tmp_path / "f.ttf", style=style, weight=5))
 
-    assert parsed.weight == 900
+    assert parsed.weight == expected
     assert parsed.metadata["weight_source"] == "style_name"
-    assert parsed.metadata["os2_weight_class"] == 4  # the raw value from the file
+    assert parsed.metadata["os2_weight_class"] == 5  # the raw value from the file
 
 
 @pytest.mark.parametrize("weight", [100, 250, 950, 1000])
