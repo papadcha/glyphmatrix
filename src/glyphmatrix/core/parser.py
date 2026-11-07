@@ -1,15 +1,63 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import re
 import struct
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from fontTools.pens.recordingPen import RecordingPen
 from fontTools.t1Lib import T1Font
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTCollection, TTFont
 
+from glyphmatrix.core.foundry import clean_designer, copyright_years, resolve_foundry
 from glyphmatrix.core.panose import classify_panose
+
+
+class _CollapseRepeats(logging.Handler):
+    """Holds fontTools records back, one per (logger, message template), with
+    a count: a broken name table logs "skipping malformed name record #%d"
+    once per record, tens of thousands of times."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.held: dict[tuple, list] = {}
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.held.setdefault((record.name, record.levelno, record.msg), [record, 0])[1] += 1
+
+    def pass_on(self) -> None:
+        for record, count in self.held.values():
+            if count > 1:
+                record.msg = f"{record.getMessage()} (and {count - 1} more like it)"
+                record.args = None
+            logging.getLogger(record.name).handle(record)
+
+
+@contextmanager
+def quiet_fonttools() -> Iterator[None]:
+    """Hide fontTools' WARNING-level log noise ("'created' timestamp out of
+    range", "extra bytes in post.stringData array", ...) for the duration of
+    the block, then restore the previous level. Tables are decompiled lazily,
+    so the whole time the font is used must be inside the block, not just the
+    TTFont() call. Errors still get through, but a repeated one is passed on
+    once, with its count, when the block ends."""
+    logger = logging.getLogger("fontTools")
+    previous_level, previous_propagate = logger.level, logger.propagate
+    collapse = _CollapseRepeats()
+    logger.setLevel(logging.ERROR)
+    logger.addHandler(collapse)
+    logger.propagate = False
+    try:
+        yield
+    finally:
+        logger.removeHandler(collapse)
+        logger.propagate = previous_propagate
+        logger.setLevel(previous_level)
+        collapse.pass_on()
 
 # CSS-ish label per OS/2.usWidthClass (1-9). None if usWidthClass is absent/unknown.
 _WIDTH_CLASSES = {
@@ -72,17 +120,25 @@ class ParsedFont:
     family_class: str | None = None
     panose_class: str | None = None
     metadata_complete: bool = True
+    # Format-specific extras stored in font_files.metadata_json (e.g. FON sizes,
+    # TTC members). None when the format has nothing beyond the common fields.
+    metadata: dict | None = None
+    # Where foundry came from: 'manufacturer', 'vendor_id', 'copyright' or None.
+    foundry_source: str | None = None
+    copyright: str | None = None
+    designer: str | None = None
 
 
 # SFNT (TrueType/OpenType) is the only family fully parsed today. Other
 # scanned formats (Type 1, legacy bitmap) still get a font_files row —
 # content_hash works the same regardless of format, so duplicate detection
 # and basic visibility work — but no family/style/glyph metadata.
-_SFNT_FORMATS = {"ttf", "otf", "ttc", "woff", "woff2"}
+_SFNT_FORMATS = {"ttf", "otf", "ttc", "otc", "woff", "woff2"}
 _T1_FORMATS = {"pfb", "pfa"}
 _BDF_FORMATS = {"bdf"}
 _PCF_FORMATS = {"pcf"}
 _FON_FORMATS = {"fon"}
+_COLLECTION_FORMATS = {"ttc", "otc"}
 
 _T1_WEIGHT_NUMERIC: dict[str, int] = {
     "thin": 100, "hairline": 100,
@@ -420,9 +476,34 @@ def _fon_style(weight: int, italic: bool) -> str:
     return base
 
 
+# dfCharSet values (Windows LOGFONT charset IDs) seen in FON files.
+_FON_CHARSETS = {
+    0: "ANSI",
+    2: "Symbol",
+    128: "Shift-JIS",
+    129: "Hangul",
+    134: "GB2312",
+    136: "Big5",
+    161: "Greek",
+    162: "Turkish",
+    177: "Hebrew",
+    178: "Arabic",
+    186: "Baltic",
+    204: "Cyrillic",
+    222: "Thai",
+    238: "Central European",
+    255: "OEM",
+}
+
+
 def _fnt_info(data: bytes, fnt_off: int) -> dict:
+    fnt_version = struct.unpack_from("<H", data, fnt_off)[0]
+    vert_res, horiz_res = struct.unpack_from("<HH", data, fnt_off + 0x46)
     italic = bool(data[fnt_off + 0x50])
     weight = struct.unpack_from("<H", data, fnt_off + 0x53)[0]
+    charset = data[fnt_off + 0x55]
+    pix_width, pix_height = struct.unpack_from("<HH", data, fnt_off + 0x56)
+    avg_width = struct.unpack_from("<H", data, fnt_off + 0x5B)[0]
     first_char = data[fnt_off + 0x5F]
     last_char = data[fnt_off + 0x60]
     copyright = (
@@ -439,7 +520,26 @@ def _fnt_info(data: bytes, fnt_off: int) -> dict:
         "italic": italic,
         "glyph_count": max(0, last_char - first_char + 1),
         "copyright": copyright or None,
+        "fnt_version": fnt_version,
+        "charset": charset,
+        # Proportional fonts report pixel width 0; fall back to the average.
+        "pixel_size": f"{pix_width or avg_width}x{pix_height}",
+        "resolution": f"{horiz_res}x{vert_res}",
     }
+
+
+def _fon_description(data: bytes, ne_off: int) -> str | None:
+    """The NE non-resident name table's first entry is the module description,
+    e.g. "FONTRES 100,96,96:MS-DOS CP 437" — the part after ':' names the font."""
+    table_len = struct.unpack_from("<H", data, ne_off + 0x20)[0]
+    table_off = struct.unpack_from("<I", data, ne_off + 0x2C)[0]
+    if not table_len or table_off >= len(data):
+        return None
+    length = data[table_off]
+    text = data[table_off + 1 : table_off + 1 + length].decode("latin-1", errors="replace").strip()
+    if text.upper().startswith("FONTRES") and ":" in text:
+        text = text.split(":", 1)[1].strip()
+    return text or None
 
 
 def _parse_fon(path: Path, content_hash: str) -> ParsedFont:
@@ -478,10 +578,24 @@ def _parse_fon(path: Path, content_hash: str) -> ParsedFont:
         (i["copyright"] for i in infos if i["copyright"]), key=len, default=None
     )
     glyph_count = max(i["glyph_count"] for i in infos)
+    foundry, foundry_source = resolve_foundry(None, None, license_text)
+
+    metadata: dict = {
+        "copyright": license_text,
+        "copyright_years": copyright_years(license_text),
+        "description": _fon_description(data, ne_off),
+        "pixel_sizes": sorted(
+            {i["pixel_size"] for i in infos},
+            key=lambda size: tuple(int(n) for n in size.split("x"))[::-1],
+        ),
+        "resolutions": sorted({i["resolution"] for i in infos}),
+        "charset": _FON_CHARSETS.get(first["charset"], str(first["charset"])),
+        "fnt_version": f"{first['fnt_version'] >> 8}.{first['fnt_version'] & 0xFF}",
+    }
 
     return ParsedFont(
         family_name=first["face"] or path.stem,
-        foundry=None,
+        foundry=foundry,
         style=_fon_style(first["weight"], first["italic"]),
         weight=first["weight"] or None,
         width=None,
@@ -496,6 +610,9 @@ def _parse_fon(path: Path, content_hash: str) -> ParsedFont:
         glyph_count=glyph_count,
         glyphs=[],
         metadata_complete=True,
+        metadata={k: v for k, v in metadata.items() if v},
+        foundry_source=foundry_source,
+        copyright=license_text,
     )
 
 
@@ -518,6 +635,100 @@ def _parse_unsupported(path: Path, content_hash: str) -> ParsedFont:
         glyphs=[],
         metadata_complete=False,
     )
+
+
+def _is_collection(path: Path) -> bool:
+    with path.open("rb") as fh:
+        return fh.read(4) == b"ttcf"
+
+
+def _collection_members(path: Path) -> list[dict]:
+    """Family/style/PostScript name of every font inside a .ttc/.otc."""
+    members = []
+    with quiet_fonttools():
+        collection = TTCollection(path, lazy=True)
+        try:
+            for index, font in enumerate(collection.fonts):
+                name_table = font["name"]
+                members.append(
+                    {
+                        "index": index,
+                        "family": name_table.getBestFamilyName(),
+                        "style": name_table.getBestSubFamilyName(),
+                        "postscript_name": name_table.getDebugName(6),
+                    }
+                )
+        finally:
+            collection.close()
+    return members
+
+
+_VERSION_NUMBER = re.compile(r"\d+\.\d+")
+_UNIQUE_ID_VERSION = re.compile(r"^\s*(?:Version\s*)?(\d+\.\d+)\s*;")
+
+
+def _fallback_version(font: TTFont, version: str | None) -> str | None:
+    """A version number for fonts whose nameID 5 has none (e.g. "Glyph Systems
+    5-April-96"). Taken from the unique ID (nameID 3, often "2.000;Vendor;Name")
+    only when head.fontRevision agrees, since either alone is unreliable:
+    font tools write 1.0 into head by default, and unique IDs are free-form."""
+    if version and _VERSION_NUMBER.search(version):
+        return None
+    match = _UNIQUE_ID_VERSION.match(font["name"].getDebugName(3) or "")
+    if match is None or "head" not in font:
+        return None
+    if abs(float(match.group(1)) - font["head"].fontRevision) > 0.001:
+        return None
+    return match.group(1)
+
+
+# Weight words in an sfnt style name, for fonts whose OS/2.usWeightClass was
+# left at the 400 default (or that have no OS/2 table). Compounds are stored
+# joined ("extra" + "bold" -> "extrabold").
+_STYLE_WEIGHTS: dict[str, int] = {
+    "thin": 100, "hairline": 100,
+    "extralight": 200, "ultralight": 200,
+    "light": 300,
+    "medium": 500,
+    "semibold": 600, "demibold": 600, "demi": 600,
+    "bold": 700,
+    "extrabold": 800, "ultrabold": 800,
+    "black": 900, "heavy": 900, "extrablack": 900, "ultrablack": 900, "ultra": 900,
+}
+_WEIGHT_MODIFIERS = {"extra": "extra", "ultra": "ultra", "x": "extra", "semi": "semi", "demi": "demi"}
+# "Extra"/"Ultra"/"Semi" before one of these describe the width, not the weight.
+_WIDTH_WORDS = {"condensed", "cond", "compressed", "narrow", "expanded", "extended", "wide"}
+_STYLE_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+")
+
+
+# Original 1-9 usWeightClass scale -> 100-900. 4 "Semi-light" has no standard
+# weight between Light and Regular; it maps to Light.
+_LEGACY_WEIGHT_SCALE = {1: 100, 2: 200, 3: 300, 4: 300, 5: 400, 6: 600, 7: 700, 8: 800, 9: 900}
+
+
+def _weight_from_style(style: str | None) -> int | None:
+    """Weight named by the style ("Black" -> 900, "ExtraBold" -> 800,
+    "Demi Italic" -> 600). None when the style names no weight, or names
+    conflicting ones; "Extra Condensed" is a width and counts as nothing."""
+    words = [w.lower() for w in _STYLE_WORD.findall(style or "")]
+    found = set()
+    i = 0
+    while i < len(words):
+        word = words[i]
+        nxt = words[i + 1] if i + 1 < len(words) else None
+        if word in _WEIGHT_MODIFIERS and nxt is not None:
+            if nxt in _WIDTH_WORDS:
+                i += 2
+                continue
+            compound = _WEIGHT_MODIFIERS[word] + nxt
+            if compound in _STYLE_WEIGHTS:
+                found.add(_STYLE_WEIGHTS[compound])
+                i += 2
+                continue
+        if word in _STYLE_WEIGHTS:
+            found.add(_STYLE_WEIGHTS[word])
+        i += 1
+    return found.pop() if len(found) == 1 else None
 
 
 def _hash_file(path: Path) -> str:
@@ -566,12 +777,31 @@ def parse_font_file(path: str | Path) -> ParsedFont:
     if fmt not in _SFNT_FORMATS:
         return _parse_unsupported(path, content_hash)
 
-    with TTFont(path, lazy=True) as font:
+    metadata = None
+    # By header, not extension: a single font saved as .ttc has no "ttcf"
+    # header and TTCollection() rejects it, while TTFont() reads it fine.
+    if fmt in _COLLECTION_FORMATS and _is_collection(path):
+        metadata = {"collection": _collection_members(path)}
+
+    # For a collection, the first member stands for the file; the others are
+    # listed in metadata (font_files.path is unique, so one row per file).
+    with quiet_fonttools(), TTFont(path, lazy=True, fontNumber=0) as font:
         name_table = font["name"]
         family_name = name_table.getBestFamilyName() or path.stem
-        foundry = name_table.getDebugName(8)  # nameID 8: Manufacturer
+        vendor_id = font["OS/2"].achVendID if "OS/2" in font else None
+        copyright_text = name_table.getDebugName(0)  # nameID 0: Copyright
+        designer = clean_designer(name_table.getDebugName(9))  # nameID 9: Designer
+        foundry, foundry_source = resolve_foundry(
+            name_table.getDebugName(8),  # nameID 8: Manufacturer
+            vendor_id,
+            copyright_text,
+        )
         style = name_table.getBestSubFamilyName()
         version = name_table.getDebugName(5)
+        fallback_version = _fallback_version(font, version)
+        if fallback_version is not None:
+            metadata = {**(metadata or {}), "version_string": version, "version_source": "unique_id+head"}
+            version = fallback_version
         license_desc = name_table.getDebugName(13)
 
         weight = None
@@ -592,6 +822,23 @@ def parse_font_file(path: str | Path) -> ParsedFont:
                     panose.bArmStyle, panose.bLetterForm, panose.bMidline, panose.bXHeight,
                 )
                 panose_class = classify_panose(panose_bytes)
+
+        os2_weight = weight
+        weight_source = None
+        # Some early fonts use the original TrueType 1-9 scale (Apple's reference
+        # manual, table 3), where 5 is "Medium (normal)": Regular, 400, not 500.
+        if weight is not None and 1 <= weight <= 9:
+            weight = _LEGACY_WEIGHT_SCALE[weight]
+            weight_source = "os2_1_to_9_scale"
+        # Many fonts leave usWeightClass at the 400 default whatever the
+        # weight; trust the style name then. A non-default value is kept as is.
+        if weight in (None, 400):
+            style_weight = _weight_from_style(style)
+            if style_weight is not None:
+                weight = style_weight
+                weight_source = "style_name"
+        if weight_source is not None:
+            metadata = {**(metadata or {}), "weight_source": weight_source, "os2_weight_class": os2_weight}
 
         is_variable = "fvar" in font
         axes = None
@@ -618,4 +865,8 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         glyphs=glyphs,
         family_class=family_class,
         panose_class=panose_class,
+        metadata=metadata,
+        foundry_source=foundry_source,
+        copyright=copyright_text,
+        designer=designer,
     )

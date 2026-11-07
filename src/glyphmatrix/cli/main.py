@@ -37,7 +37,7 @@ from glyphmatrix.core.collections import (
     list_collections,
     remove_face_from_collection,
 )
-from glyphmatrix.core.compare import compare_font_files
+from glyphmatrix.core.compare import compare_font_files, compare_paths
 from glyphmatrix.core.conflicts import list_conflicts
 from glyphmatrix.core.database import connect, init_schema
 from glyphmatrix.core.duplicates import find_duplicates
@@ -46,6 +46,13 @@ from glyphmatrix.core.glyph_inspector import find_glyphs, glyph_summary
 from glyphmatrix.core.ingest import ingest_directory
 from glyphmatrix.core.language_coverage import check_script, script_breakdown
 from glyphmatrix.core.opentype_features import list_features
+from glyphmatrix.core.organize import (
+    CASE_MODES,
+    apply_organize,
+    plan_organize,
+    undo_organize,
+    write_inventory,
+)
 from glyphmatrix.core.licenses import classify_license, list_license_conflicts
 from glyphmatrix.core.packages import (
     add_document,
@@ -68,6 +75,7 @@ from glyphmatrix.core.query import (
     list_versions,
     search_library,
 )
+from glyphmatrix.core.specimen import DEFAULT_SAMPLE, export_specimen
 from glyphmatrix.core.renderer import DEFAULT_TEXT, render_text_preview, render_waterfall_preview
 from glyphmatrix.core.tags import add_tags, find_faces_by_tag, list_all_tags, list_tags_for_face, remove_tag
 from glyphmatrix.core.validator import validate_library
@@ -97,19 +105,186 @@ def _connect(ctx: click.Context) -> sqlite3.Connection:
 
 @fontctl.command()
 @click.argument("directory", type=click.Path(exists=True, file_okay=False))
+@click.option("--reparse", is_flag=True,
+              help="Re-read unchanged files too (e.g. after a parser update) and update their faces in place.")
 @click.option("--json", "as_json", is_flag=True)
 @click.pass_context
-def scan(ctx: click.Context, directory: str, as_json: bool) -> None:
+def scan(ctx: click.Context, directory: str, reparse: bool, as_json: bool) -> None:
     conn = _connect(ctx)
-    result = ingest_directory(conn, directory)
+    result = ingest_directory(conn, directory, reparse=reparse)
     if as_json:
         click.echo(json.dumps(asdict(result)))
     else:
+        reparsed = f"reparsed {result.files_reparsed}  " if reparse else ""
         click.echo(
             f"scanned {result.files_scanned}  added {result.files_added}  "
-            f"changed {result.files_changed}  removed {result.files_removed}  "
+            f"changed {result.files_changed}  {reparsed}removed {result.files_removed}  "
             f"errors {result.errors}"
         )
+
+
+def _existing_db(ctx: click.Context) -> sqlite3.Connection | None:
+    """The library DB if it already exists — organize keeps its paths in sync
+    but never creates a library just for that."""
+    return _connect(ctx) if Path(ctx.obj["db_path"]).exists() else None
+
+
+def _rel(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
+@fontctl.command()
+@click.argument("source", type=click.Path(exists=True, file_okay=False))
+@click.option("--dest", type=click.Path(file_okay=False), default=None,
+              help="Where to build Vendor/Family/Version/ (default: SOURCE itself).")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Actually move files. Without it, only shows the plan.")
+@click.option("--vendor", default=None,
+              help="Put every font under this vendor (a folder from a single publisher).")
+@click.option("--vendor-alias", "vendor_aliases", multiple=True, metavar="OLD=NEW",
+              help="Rename a resolved vendor, e.g. 'Two Peas=Two Peas in a Bucket' or "
+                   "'Unknown=Acme'. Repeatable; case-insensitive.")
+@click.option("--case", "case", type=click.Choice(CASE_MODES), default="as-is", show_default=True,
+              help="Casing of family folders and file names: as written in the font, or "
+                   "sentence/title/lower case. Vendor folders are not re-cased.")
+@click.option("--no-family-grouping", "no_grouping", is_flag=True,
+              help="Don't merge fonts in one folder whose names extend each other "
+                   "('Flea Market' + 'Flea Market Block') into one family.")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def organize(
+    ctx: click.Context,
+    source: str,
+    dest: str | None,
+    do_apply: bool,
+    vendor: str | None,
+    vendor_aliases: tuple[str, ...],
+    case: str,
+    no_grouping: bool,
+    as_json: bool,
+) -> None:
+    """Arrange fonts as Vendor/Family/Version/Family Style.ext.
+
+    Dry run by default. With --apply each file is copied, verified and only
+    then removed from its old place; an undo log and _Font Catalog.csv are
+    written to the destination. Identical duplicates are reported, not moved."""
+    aliases = {}
+    for alias in vendor_aliases:
+        old, sep, new = alias.partition("=")
+        if not sep or not old.strip() or not new.strip():
+            raise click.BadParameter(f"expected OLD=NEW, got {alias!r}", param_hint="--vendor-alias")
+        aliases[old] = new
+    source_path = Path(source)
+    dest_path = Path(dest) if dest else source_path
+    library = _existing_db(ctx)
+    plan = plan_organize(source_path, dest_path, vendor=vendor, vendor_aliases=aliases, case=case,
+                        group_families=not no_grouping, conn=library)
+
+    if do_apply:
+        result = apply_organize(plan, source_path, dest_path, conn=library)
+
+    if as_json:
+        payload = {
+            "applied": do_apply,
+            "items": [
+                {
+                    "source": str(i.source),
+                    "destination": str(i.destination) if i.destination else None,
+                    "action": i.action,
+                    "vendor": i.vendor,
+                    "family": i.family,
+                    "style": i.style,
+                    "version": i.version_label,
+                    "review": i.flags,
+                }
+                for i in plan
+            ],
+        }
+        if do_apply:
+            payload["result"] = {
+                k: str(v) if isinstance(v, Path) else v for k, v in asdict(result).items()
+            }
+        click.echo(json.dumps(payload, ensure_ascii=False))
+        if do_apply and result.failure:
+            ctx.exit(1)
+        return
+
+    for item in plan:
+        if item.action == "unchanged":
+            continue
+        src = _rel(item.source, source_path)
+        if item.destination is None:
+            click.echo(f"[{item.action}] {src}")
+        else:
+            click.echo(f"{src}\n  -> {_rel(item.destination, dest_path)}")
+        for flag in item.flags:
+            click.echo(f"     ! {flag}")
+
+    counts = {a: sum(1 for i in plan if i.action == a)
+              for a in ("move", "unchanged", "duplicate", "active", "error")}
+    review = sum(1 for i in plan if i.flags and i.action == "move")
+    click.echo(
+        f"\n{counts['move']} to move, {counts['active']} active (skipped, deactivate first), "
+        f"{counts['unchanged']} already in place, "
+        f"{counts['duplicate']} duplicates, {counts['error']} unreadable, {review} to review"
+    )
+    if not do_apply:
+        click.echo("dry run: nothing moved. Re-run with --apply to move files.")
+        return
+    click.echo(f"moved {result.moved}, errors {result.errors}")
+    if result.undo_log:
+        click.echo(f"undo log: {result.undo_log}")
+    if result.catalog:
+        click.echo(f"catalog: {result.catalog}")
+    for warning in result.warnings:
+        click.echo(f"warning: {warning}", err=True)
+    if result.failure:
+        click.echo(f"error: {result.failure}", err=True)
+        ctx.exit(1)
+
+
+@fontctl.command()
+@click.argument("directory", type=click.Path(exists=True, file_okay=False))
+@click.argument("output", metavar="OUTPUT.pdf", type=click.Path(dir_okay=False))
+@click.option("--text", default=DEFAULT_SAMPLE, show_default=True, help="Sample line.")
+@click.option("--title", default=None, help="Page header (default: the folder name).")
+def specimen(directory: str, output: str, text: str, title: str | None) -> None:
+    """PDF list of every font in DIRECTORY: name plus a sample line in that
+    font, grouped by folder. Symbol fonts show their own characters."""
+    try:
+        path, fonts, pages = export_specimen(directory, output, sample_text=text, title=title)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"wrote {path}  ({fonts} fonts, {pages} page{'' if pages == 1 else 's'})")
+
+
+@fontctl.command()
+@click.argument("directory", type=click.Path(exists=True, file_okay=False))
+@click.argument("output", metavar="OUTPUT.csv", type=click.Path(dir_okay=False))
+@click.option("--vendor", default=None, help="Write this vendor for every font (single-publisher folder).")
+def inventory(directory: str, output: str, vendor: str | None) -> None:
+    """Write a CSV catalog of DIRECTORY as it is — nothing is moved.
+
+    For folders arranged by hand (series folders etc.): re-run it after
+    adding fonts. Columns match organize's _Font Catalog.csv."""
+    path, count = write_inventory(directory, output, vendor=vendor)
+    click.echo(f"wrote {path}  ({count} fonts)")
+
+
+@fontctl.command(name="organize-undo")
+@click.argument("log", type=click.Path(exists=True, dir_okay=False))
+@click.pass_context
+def organize_undo(ctx: click.Context, log: str) -> None:
+    """Move files back using an undo log written by 'organize --apply'."""
+    restored, problems = undo_organize(log, conn=_existing_db(ctx))
+    click.echo(f"restored {restored}")
+    for problem in problems:
+        click.echo(f"  ! {problem}", err=True)
+    if problems:
+        ctx.exit(1)
 
 
 @fontctl.command(name="list")
@@ -136,6 +311,28 @@ def list_fonts(ctx: click.Context, as_json: bool) -> None:
             f"{face['family']:<24} {style:<14} weight={weight:<5} "
             f"width={width:<16} files={face['file_count']}{variable}"
         )
+
+
+def _metadata_lines(metadata: dict | None) -> list[str]:
+    """Human-readable lines for format-specific extras (FON, TTC/OTC)."""
+    if not metadata:
+        return []
+    lines = []
+    if metadata.get("version_source"):
+        lines.append(f"version from unique ID + head (name table says: {metadata.get('version_string')})")
+    if metadata.get("copyright_years"):
+        lines.append("copyright: " + ", ".join(str(y) for y in metadata["copyright_years"]))
+    if metadata.get("description"):
+        lines.append(f"description: {metadata['description']}")
+    if metadata.get("pixel_sizes"):
+        lines.append("bitmap sizes: " + ", ".join(metadata["pixel_sizes"]) + " px")
+    if metadata.get("charset"):
+        lines.append(f"charset: {metadata['charset']}")
+    for member in metadata.get("collection", []):
+        lines.append(
+            f"collection #{member['index']}: {member['family']} {member['style'] or ''}".rstrip()
+        )
+    return lines
 
 
 @fontctl.command()
@@ -171,6 +368,8 @@ def info(ctx: click.Context, family: str, as_json: bool) -> None:
                 f"glyphs={f['glyph_count']}  source={f['source']}  hash={f['content_hash'][:12]}  "
                 f"license={license_category}  [{f['activation_state']}]{expiry}"
             )
+            for line in _metadata_lines(f["metadata"]):
+                click.echo(f"      {line}")
 
 
 @fontctl.command()
@@ -223,6 +422,11 @@ def compare(
             f"no {family} {style} with version '{missing}'. Available versions: {available_str}"
         )
 
+    if file_a["id"] == file_b["id"]:
+        raise click.ClickException(
+            f"both versions resolve to the same file ({file_a['path']}). If two files share "
+            f"family, style and version, compare them directly: fontctl compare-files A B"
+        )
     diff = compare_font_files(conn, file_a["id"], file_b["id"])
 
     if as_json:
@@ -247,6 +451,38 @@ def compare(
     click.echo(f"  only in {version_b} ({len(diff.only_in_b)}): {_format_glyph_list(diff.only_in_b)}")
     click.echo(f"  changed outline ({len(diff.changed)}): {_format_glyph_list(diff.changed)}")
     click.echo(f"  unchanged: {diff.unchanged_count}")
+
+
+@fontctl.command(name="compare-files")
+@click.argument("file_a", type=click.Path(exists=True, dir_okay=False))
+@click.argument("file_b", type=click.Path(exists=True, dir_okay=False))
+@click.option("--json", "as_json", is_flag=True)
+def compare_files_cmd(file_a: str, file_b: str, as_json: bool) -> None:
+    """Compare two font files directly: metadata and glyph outlines."""
+    result = compare_paths(file_a, file_b)
+    glyphs = result.glyphs
+    if as_json:
+        click.echo(json.dumps({
+            "identical": result.identical,
+            "fields": {k: list(v) for k, v in result.fields.items()},
+            "sizes": list(result.sizes),
+            "only_in_a": glyphs.only_in_a,
+            "only_in_b": glyphs.only_in_b,
+            "changed": glyphs.changed,
+            "unchanged_count": glyphs.unchanged_count,
+        }, ensure_ascii=False))
+        return
+    click.echo(f"A: {file_a}  ({result.sizes[0]:,} bytes)")
+    click.echo(f"B: {file_b}  ({result.sizes[1]:,} bytes)")
+    if result.identical:
+        click.echo("identical: byte-for-byte the same file")
+        return
+    for name, (a, b) in result.fields.items():
+        click.echo(f"  {name}: {a!r}  vs  {b!r}")
+    click.echo(f"  only in A ({len(glyphs.only_in_a)}): {_format_glyph_list(glyphs.only_in_a)}")
+    click.echo(f"  only in B ({len(glyphs.only_in_b)}): {_format_glyph_list(glyphs.only_in_b)}")
+    click.echo(f"  changed outline ({len(glyphs.changed)}): {_format_glyph_list(glyphs.changed)}")
+    click.echo(f"  unchanged: {glyphs.unchanged_count}")
 
 
 @fontctl.command()
