@@ -73,7 +73,11 @@ _COMPANY_SUFFIX = re.compile(
     r"Limited Partnership)\.?$",
     re.IGNORECASE,
 )
-_COPYRIGHT_MARK = re.compile(r"(?:copyright|copr\.?|\(c\)|©)", re.IGNORECASE)
+# "Copyright c 1992 X" — a bare "c" after the word is the © sign typed as a letter.
+_COPYRIGHT_MARK = re.compile(r"(?:copyright(?:\s+c\b)?|copr\.?|\(c\)|©)", re.IGNORECASE)
+# nameID 8 holding a copyright/trademark sentence instead of a name.
+_SENTENCE_LIKE = re.compile(r"\(c\)|©|\(tm\)|™|trademark|all rights|\bcopyright\b|registered in", re.IGNORECASE)
+_DOMAIN = re.compile(r"^(?:https?://|www\.)(?:www\.)?([a-z0-9][a-z0-9-]*)\.[a-z]{2,}\b", re.IGNORECASE)
 _YEARS = re.compile(r"\b(?:19|20)\d{2}\b(?:\s*(?:[-–,/]|,?\s*and)\s*(?:(?:19|20)\d{2}|\d{2})\b)*")
 
 
@@ -100,9 +104,19 @@ def holder_from_copyright(copyright_text: str | None, keep_suffix: bool = False)
         if stripped == rest:
             break
         rest = stripped
+    # "(r) (c) 1999 [T-26] Chicago ..." — a bracketed name straight after the year.
+    bracketed = re.match(r"\[([^\]]+)\]", rest)
+    if bracketed:
+        rest = bracketed.group(1)
+    else:
+        # "©2004 | www.miniml.com | design by ..." — separators, then a web address.
+        rest = rest.lstrip(" |/-–—:,")
+        domain = _DOMAIN.match(rest)
+        if domain:
+            rest = domain.group(1)
     # The name runs until a sentence break, bracket, year or "All rights".
     name = re.split(r"\s*(?:[;(\[]|\.\s|\.$|\.(?=\d)|,\s*All rights|\s+All rights|\s+(?:19|20)\d{2}\b)",
-                    rest, maxsplit=1)[0]
+                    rest, maxsplit=1, flags=re.IGNORECASE)[0]
     name = name.strip(" .,")
     if not keep_suffix:
         name = _COMPANY_SUFFIX.sub("", name).strip(" .,")
@@ -118,7 +132,8 @@ def resolve_foundry(
 ) -> tuple[str | None, str | None]:
     """Return (foundry, source), source being 'manufacturer', 'vendor_id',
     'copyright' or None when nothing usable was found."""
-    if manufacturer and manufacturer.strip() and not is_tool_default(manufacturer):
+    if (manufacturer and manufacturer.strip() and not is_tool_default(manufacturer)
+            and not _SENTENCE_LIKE.search(manufacturer) and len(manufacturer.strip()) <= 60):
         return manufacturer.strip(), "manufacturer"
     if vendor_id is not None and vendor_id not in _PLACEHOLDER_VENDOR_IDS | _TOOL_VENDOR_IDS:
         name = VENDOR_IDS.get(vendor_id)

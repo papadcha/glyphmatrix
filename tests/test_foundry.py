@@ -85,3 +85,28 @@ def test_holder_ignores_tool_notes_and_templates(copyright_text, holder):
 def test_tool_manufacturer_and_vendor_ids_are_ignored():
     assert resolve_foundry("High-Logic", "HL  ", None) == (None, None)
     assert resolve_foundry(None, "MACR", "Typeface © Melissa Baxter, 2002.") == ("Melissa Baxter", "copyright")
+
+
+def test_bare_c_after_copyright_is_the_mark():
+    assert holder_from_copyright("Copyright c 1992 Southern Software, Inc. All Rights Reserved") == "Southern Software"
+
+
+def test_holder_in_brackets_or_web_address():
+    assert holder_from_copyright("(r) (c) 1999 [T-26] Chicago www.t26.com") == "T-26"
+    assert holder_from_copyright("©2004 | www.miniml.com | design by craig kroeger") == "miniml"
+
+
+def test_manufacturer_that_is_a_copyright_sentence_is_not_a_vendor():
+    from glyphmatrix.core.foundry import resolve_foundry
+    name, source = resolve_foundry(
+        "Digitized data (C) Agfa Monotype Corporation. Neo Sans(TM) is a trademark of Agfa",
+        None, "Digitized data (C) 2004 Agfa Monotype Corporation. All rights reserved.")
+    assert (name, source) == ("Agfa Monotype", "copyright")
+
+
+def test_dotted_initials_are_not_a_web_address():
+    assert holder_from_copyright("Digital data. Copyright (c) 1992 W.S.I.  All Rights Reserved.") == "W.S.I"
+
+
+def test_all_rights_reserved_cut_is_case_insensitive():
+    assert holder_from_copyright("Copyright c 1992 Southern Software, Inc All Rights Reserved") == "Southern Software"
