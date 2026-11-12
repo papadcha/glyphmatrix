@@ -110,3 +110,11 @@ def test_dotted_initials_are_not_a_web_address():
 
 def test_all_rights_reserved_cut_is_case_insensitive():
     assert holder_from_copyright("Copyright c 1992 Southern Software, Inc All Rights Reserved") == "Southern Software"
+
+
+def test_dot_after_an_initial_or_title_is_not_a_sentence_break():
+    assert holder_from_copyright("Copyright 1997 Dianne J. Hook") == "Dianne J. Hook"
+    assert holder_from_copyright("Copyright (c) 1999 by Jeffrey N. Levine. Freeware, not for sale.") == "Jeffrey N. Levine"
+    assert holder_from_copyright("(c) Rev. Josh Wilhelm 2000") == "Rev. Josh Wilhelm"
+    assert holder_from_copyright("(C) 1993 B & P Graphics, Ltd.") == "B & P Graphics"
+    assert holder_from_copyright("Digital data. Copyright (c) 1992 W.S.I.  All Rights Reserved.") == "W.S.I"

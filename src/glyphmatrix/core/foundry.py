@@ -77,6 +77,7 @@ _COMPANY_SUFFIX = re.compile(
 _COPYRIGHT_MARK = re.compile(r"(?:copyright(?:\s+c\b)?|copr\.?|\(c\)|©)", re.IGNORECASE)
 # nameID 8 holding a copyright/trademark sentence instead of a name.
 _SENTENCE_LIKE = re.compile(r"\(c\)|©|\(tm\)|™|trademark|all rights|\bcopyright\b|registered in", re.IGNORECASE)
+_INITIAL_DOT = re.compile(r"\b(?:[A-Z]|Rev|Dr|Mr|Mrs|Ms|Prof|Jr|Sr|St)\.(?=\s+[A-Z][a-z])")
 _DOMAIN = re.compile(r"^(?:https?://|www\.)(?:www\.)?([a-z0-9][a-z0-9-]*)\.[a-z]{2,}\b", re.IGNORECASE)
 _YEARS = re.compile(r"\b(?:19|20)\d{2}\b(?:\s*(?:[-–,/]|,?\s*and)\s*(?:(?:19|20)\d{2}|\d{2})\b)*")
 
@@ -114,10 +115,12 @@ def holder_from_copyright(copyright_text: str | None, keep_suffix: bool = False)
         domain = _DOMAIN.match(rest)
         if domain:
             rest = domain.group(1)
+    # A dot after an initial or a title ("Dianne J. Hook", "Rev. Josh Wilhelm") is not a sentence break.
+    rest = _INITIAL_DOT.sub(lambda m: m.group(0).replace(".", "\0"), rest)
     # The name runs until a sentence break, bracket, year or "All rights".
     name = re.split(r"\s*(?:[;(\[]|\.\s|\.$|\.(?=\d)|,\s*All rights|\s+All rights|\s+(?:19|20)\d{2}\b)",
                     rest, maxsplit=1, flags=re.IGNORECASE)[0]
-    name = name.strip(" .,")
+    name = name.replace("\0", ".").strip(" .,")
     if not keep_suffix:
         name = _COMPANY_SUFFIX.sub("", name).strip(" .,")
     if not name or not name[0].isalpha() or len(name) > 60:
