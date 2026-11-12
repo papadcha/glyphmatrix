@@ -1,0 +1,213 @@
+# Catalogue of foundries, publishers, tools and licences that fontctl recognises.
+# One [[foundry]] per publisher. Everything here is data: add an entry, not code.
+# A file passed with --foundries (or ~/.glyphmatrix/foundries.toml) is merged on
+# top of this one: an entry with the same `name` replaces the packaged one.
+#
+# name        folder name (organize's Vendor level). Required, unique (case-insensitive).
+# holder      folder name for `--profile tidy`, when the library's established holder
+#             differs from `name` (e.g. "Microsoft Corporation"). Default: name.
+# kind        foundry | person | project | tool | licence.  tool and licence are never a
+#             publisher: text that matches them (aliases / patterns) goes to _Unknown.
+# aliases     whole names that mean this publisher (compared ignoring case and accents).
+# prefixes    names that START with this text mean this publisher (longest wins).
+# vendor_ids  OS/2 achVendID tags (4 characters, case-sensitive).
+# stamps      text the foundry writes into the unique ID (nameID 3) or version string
+#             (nameID 5), e.g. "Brendel            :Aldine". Used when nothing else
+#             names a publisher, or - with --fold-reissues - over `reissues`.
+# patterns    regular expressions, searched in a name-table string (case-insensitive).
+# reissues    other holders whose copyright appears in this foundry's own packages.
+#             With --fold-reissues those fonts go under this foundry.
+# parent      a foundry this one is a twin or branch of (information only).
+# status      confirmed | inferred | user-decision   (how sure the entry is)
+# decided     YYYY-MM-DD   sources: where it was checked   notes: why
+
+# ---- vendor IDs registered with Microsoft (the ones that name a real maker) ----
+
+[[foundry]]
+name = "Ascender"
+vendor_ids = ["1ASC"]
+
+[[foundry]]
+name = "Adobe"
+holder = "Adobe Systems Incorporated"
+vendor_ids = ["ADBE"]
+aliases = ["adobe systems"]
+prefixes = ["adobe systems"]
+
+[[foundry]]
+name = "Apple"
+vendor_ids = ["APPL"]
+
+[[foundry]]
+name = "Bigelow & Holmes"
+holder = "Bigelow & Holmes Inc"
+vendor_ids = ["B&H "]
+prefixes = ["bigelow & holmes"]
+
+[[foundry]]
+name = "Bitstream"
+vendor_ids = ["BITS"]
+
+[[foundry]]
+name = "Dalton Maag"
+vendor_ids = ["DAMA"]
+
+[[foundry]]
+name = "DynaComware"
+vendor_ids = ["DYNA"]
+
+[[foundry]]
+name = "Font House"
+vendor_ids = ["FTH "]
+
+[[foundry]]
+name = "Google"
+holder = "Google Inc"
+vendor_ids = ["GOOG"]
+aliases = ["google corporation"]
+
+[[foundry]]
+name = "Glyph Systems"
+vendor_ids = ["Glyf"]
+
+[[foundry]]
+name = "Hoefler & Co."
+vendor_ids = ["H&FJ"]
+
+[[foundry]]
+name = "ITC"
+vendor_ids = ["ITC "]
+
+[[foundry]]
+name = "Linotype"
+vendor_ids = ["LINO"]
+aliases = ["linotype library", "linotype-hell"]
+notes = "Linotype, Linotype AG, GmbH, Library, Linotype-Hell AG: one company"
+
+[[foundry]]
+name = "Monotype"
+vendor_ids = ["MONO"]
+aliases = ["monotype imaging", "monotype typography", "the monotype corporation"]
+
+[[foundry]]
+name = "Microsoft"
+holder = "Microsoft Corporation"
+vendor_ids = ["MS  ", "MSFT"]
+aliases = ["microsoft corp"]
+
+[[foundry]]
+name = "Test Pilot Collective"
+vendor_ids = ["TPTC"]
+
+[[foundry]]
+name = "URW"
+vendor_ids = ["URW "]
+aliases = ["(urw)++"]
+
+[[foundry]]
+name = "Underware"
+vendor_ids = ["ULA "]
+
+# ---- publishers decided while sorting real collections (2026-11-12) ----
+
+[[foundry]]
+name = "Brendel Informatik"
+kind = "foundry"
+aliases = ["brendel", "brendel informatik gmbh", "brendel & pabst"]
+stamps = ["Brendel            :"]
+reissues = ["Southern Software", "M. Klein", "Adobe", "URW"]
+parent = "SoftMaker"
+status = "user-decision"
+decided = "2026-11-12"
+sources = ["https://luc.devroye.org/fonts-23628.html"]
+notes = """Packages of its own CD carry 'Brendel :' in the unique ID (nameID 3) and the build date
+(nameID 5) even when the copyright names Southern Software, M. Klein or Adobe (Witchdoctor is
+Monotype's Biffo). B & P Graphics (= Brendel & Pabst, per Devroye) is kept apart until decided."""
+
+[[foundry]]
+name = "SoftMaker"
+aliases = ["softmaker software gmbh", "softmaker"]
+status = "confirmed"
+
+[[foundry]]
+name = "Southern Software"
+holder = "Southern Software, Inc"
+aliases = ["southern software, inc", "southern software inc", "southern software"]
+prefixes = ["199 southern software", "southern software"]
+status = "confirmed"
+notes = "'Copyright c 1992 Southern Software' - the bare 'c' is the copyright sign"
+
+[[foundry]]
+name = "B & P Graphics"
+aliases = ["b & p graphics", "b & p graphics, ltd", "b+p graphics"]
+related = "Brendel Informatik"
+status = "inferred"
+decided = "2026-11-12"
+sources = ["https://luc.devroye.org/fonts-23628.html"]
+notes = "Brendel & Pabst = B & P Graphics = Brendel Informatik (Devroye). Not merged yet: the user keeps it separate."
+
+[[foundry]]
+name = "Weatherly Systems"
+holder = "Weatherly Systems Inc"
+aliases = ["w.s.i", "w.s.i.", "weatherly systems, inc", "weatherly systems inc", "weatherly systems"]
+status = "user-decision"
+decided = "2026-11-12"
+notes = "WSI-Font Collection; 'W.S.I.' and 'Weatherly Systems, Inc' are the same company. WSI-Fonts (the collection name) is kept as it is."
+
+[[foundry]]
+name = "Rabbit Reproductions Typefoundry"
+aliases = ["rabbit reproductions typefoundry", "red rooster typefounders", "red rooster collection"]
+status = "user-decision"
+decided = "2026-11-12"
+sources = ["https://luc.devroye.org/nickcurtis.html", "https://luc.devroye.org/myfonts-modern"]
+notes = "Rabbit Reproductions = Red Rooster (Pat Hickson), published and digitised through ITF / dtpTypes. The 'RR' ending of the family names marks them. ITF itself is deliberately NOT an alias: ITF published many other designers."
+
+[[foundry]]
+name = "Expert Software"
+aliases = ["expert software"]
+status = "user-decision"
+decided = "2026-11-12"
+sources = ["https://luc.devroye.org/fonts-48589.html"]
+notes = "Budget CDs of ~2000 fonts (EX0001...). Every copyright is 'Generated by Fontographer'; Devroye calls it one of the largest font cloners."
+
+[[foundry]]
+name = "Agfa Monotype"
+aliases = ["agfa monotype", "agfa monotype corporation"]
+status = "confirmed"
+notes = "nameID 8 of the Neo Sans/Neo Tech fonts is a whole copyright sentence; 'Digitized data (C) Agfa Monotype Corporation' names the holder"
+
+[[foundry]]
+name = "Avid Technology"
+aliases = ["avid technology", "avid technology inc"]
+status = "confirmed"
+
+# ---- tools and licences: never a publisher ----
+
+[[foundry]]
+name = "Fontographer"
+kind = "tool"
+vendor_ids = ["Alts", "ALTS", "MACR"]
+patterns = ["fontographer", "macromedia", "altsys"]
+notes = "Editor placeholders: 'Generated by Fontographer 3.5', vendor ID Alts"
+
+[[foundry]]
+name = "FontLab"
+kind = "tool"
+vendor_ids = ["pyrs", "PYRS"]
+patterns = ["fontlab", "pyrus"]
+
+[[foundry]]
+name = "FontCreator"
+kind = "tool"
+vendor_ids = ["HL  "]
+patterns = ["high-logic", "erwin denissen"]
+
+[[foundry]]
+name = "Font converters"
+kind = "tool"
+patterns = ["\\bmetamorphosis\\b", "\\balltype\\b", "\\bscanahand\\b", "\\bfontforge\\b", "\\bmftrace\\b"]
+
+[[foundry]]
+name = "SIL Open Font Licence"
+kind = "licence"
+patterns = ["^sil$", "licensed under", "reserved font name"]

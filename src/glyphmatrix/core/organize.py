@@ -30,6 +30,7 @@ from datetime import datetime
 from pathlib import Path
 
 from glyphmatrix.core.extract import extract_member
+from glyphmatrix.core.foundries import default_foundries
 from glyphmatrix.core.foundry import copyright_years
 from glyphmatrix.core.parser import ParsedFont, parse_font_file
 from glyphmatrix.core.scanner import scan_directory
@@ -40,17 +41,6 @@ MANIFEST_PREFIX = "_manifest-"
 UNKNOWN_VENDOR = "Unknown"
 NO_VERSION = "No Version"
 
-# Names that differ only by corporate form or division map to one folder.
-_VENDOR_ALIASES = {
-    "monotype imaging": "Monotype",
-    "monotype typography": "Monotype",
-    "the monotype corporation": "Monotype",
-    "linotype library": "Linotype",
-    "linotype-hell": "Linotype",
-    "adobe systems": "Adobe",
-    "microsoft corp": "Microsoft",
-    "google corporation": "Google",
-}
 _COMPANY_SUFFIX = re.compile(
     r"[,\s]+(inc|incorporated|ltd|limited|corp|corporation|co|company|gmbh|ag|llc|plc|"
     r"s\.a|limited partnership)\.?$",
@@ -112,7 +102,7 @@ def short_vendor(name: str | None) -> str:
     while previous != vendor:
         previous = vendor
         vendor = _COMPANY_SUFFIX.sub("", vendor).strip(" ,.")
-    return _VENDOR_ALIASES.get(vendor.lower(), vendor) or UNKNOWN_VENDOR
+    return default_foundries().canonical(vendor) or vendor or UNKNOWN_VENDOR
 
 
 def version_label(version: str | None, copyright_text: str | None) -> tuple[str, bool]:
@@ -161,6 +151,8 @@ def _review_flags(parsed: ParsedFont, version_from_copyright: bool) -> list[str]
     flags = []
     if parsed.foundry_source == "copyright":
         flags.append("vendor taken from copyright holder")
+    elif parsed.foundry_source == "stamp":
+        flags.append("vendor taken from the foundry's stamp in the unique ID")
     elif parsed.foundry_source is None:
         flags.append("vendor unknown")
     if parsed.copyright and len(
@@ -174,7 +166,8 @@ def _review_flags(parsed: ParsedFont, version_from_copyright: bool) -> list[str]
     return flags
 
 
-_VENDOR_FLAGS = ("vendor taken from copyright holder", "vendor unknown")
+_VENDOR_FLAGS = ("vendor taken from copyright holder", "vendor unknown",
+                 "vendor taken from the foundry's stamp in the unique ID")
 
 
 def _settle_vendors(items: list[PlannedMove], forced: str | None, aliases: dict[str, str]) -> None:
@@ -389,6 +382,7 @@ def plan_organize(
     case: str = "as-is",
     group_families: bool = True,
     conn: sqlite3.Connection | None = None,
+    fold_reissues: bool = False,
 ) -> list[PlannedMove]:
     """vendor: put every font under this vendor (a folder from one publisher).
     case: casing of family folders and file names — 'as-is' (as written in
@@ -398,6 +392,9 @@ def plan_organize(
     another's ("Flea Market" + "Flea Market Block Regular") as one family.
     vendor_aliases: {"Two Peas": "Two Peas in a Bucket", "Unknown": "..."} —
     matched case-insensitively against the resolved vendor.
+    fold_reissues: a font stamped by a foundry that lists its copyright holder under
+    `reissues` in foundries.toml (Brendel's 'Southern Software' fonts) goes under that
+    foundry instead of the holder; the plan says so in the review flags.
     conn: the library DB, if there is one. A font it has activated is never
     planned for a move (the system font folder holds a link to its current
     path): it gets action 'active' and stays where it is."""
@@ -444,16 +441,23 @@ def plan_organize(
         if style.lower() in ("normal", family.lower()):
             style = "Regular"
         label, from_copyright = version_label(parsed.version, parsed.copyright)
+        flags = _review_flags(parsed, from_copyright)
+        vendor_name = short_vendor(parsed.foundry)
+        if fold_reissues:
+            packager = default_foundries().folded_into(parsed.foundry, parsed.unique_id)
+            if packager is not None:
+                flags.append(f"folded into {packager.name} (reissue of {vendor_name})")
+                vendor_name = packager.name
         item = PlannedMove(
             path,
             None,
             "move",
-            vendor=short_vendor(parsed.foundry),
+            vendor=vendor_name,
             family=family,
             style=style,
             version_label=label,
             content_hash=parsed.content_hash,
-            flags=_review_flags(parsed, from_copyright),
+            flags=flags,
             parsed=parsed,
         )
         by_hash[parsed.content_hash] = item

@@ -127,6 +127,9 @@ class ParsedFont:
     foundry_source: str | None = None
     copyright: str | None = None
     designer: str | None = None
+    # nameID 3 and 5 joined ("Brendel            :Aldine | Brendel            :28.08.1995"):
+    # a foundry's stamp, read by the catalogue (foundries.toml).
+    unique_id: str | None = None
 
 
 # SFNT (TrueType/OpenType) is the only family fully parsed today. Other
@@ -791,10 +794,12 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         vendor_id = font["OS/2"].achVendID if "OS/2" in font else None
         copyright_text = name_table.getDebugName(0)  # nameID 0: Copyright
         designer = clean_designer(name_table.getDebugName(9))  # nameID 9: Designer
+        unique_id = " | ".join(t for t in (name_table.getDebugName(3), name_table.getDebugName(5)) if t) or None
         foundry, foundry_source = resolve_foundry(
             name_table.getDebugName(8),  # nameID 8: Manufacturer
             vendor_id,
             copyright_text,
+            unique_id,
         )
         style = name_table.getBestSubFamilyName()
         version = name_table.getDebugName(5)
@@ -868,5 +873,5 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         metadata=metadata,
         foundry_source=foundry_source,
         copyright=copyright_text,
-        designer=designer,
+        designer=designer,        unique_id=unique_id,
     )

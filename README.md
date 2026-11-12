@@ -17,7 +17,7 @@ verified on real hardware. See DONE.md/TODO.md for the detailed breakdown.
 ```
 src/glyphmatrix/
     core/       scanner, parser, ingest, query, compare, validator, duplicates,
-                tags, collections, renderer, activation(_service), models, database, schema.sql
+                foundries (+ foundries.toml), tags, collections, renderer, activation(_service), models, database, schema.sql
     platforms/  windows / macos / linux ActivationProvider implementations
     cli/        fontctl entry point
 tests/
@@ -28,9 +28,10 @@ docs/           proposal.md
 
 ```
 fontctl scan <directory>
-fontctl organize <directory> [--dest DIR] [--apply]
+fontctl organize <directory> [--dest DIR] [--apply] [--profile tidy] [--fold-reissues]
 fontctl organize-undo <undo-log.csv>
 fontctl inventory <directory> <output.csv> [--vendor NAME]
+fontctl foundries list [--kind K] | show <name> | check <path>... [--unknown-only]
 fontctl list
 fontctl info <family>
 fontctl compare <family> <style> <version_a> <version_b>

@@ -35,6 +35,7 @@ from glyphmatrix.core.extract import (
     member_count,
     member_extension,
 )
+from glyphmatrix.core.foundries import default_foundries
 from glyphmatrix.core.foundry import (
     _COPYRIGHT_MARK,
     clean_designer,
@@ -72,10 +73,14 @@ _YEAR_BRACKET = re.compile(r"(\b(?:19|20)\d{2}\s*)\[([^\]]+)\]")
 class Rules:
     def __init__(self, data: dict):
         holder = data.get("holder", {})
-        self.exact = {k.casefold(): v for k, v in holder.get("exact", {}).items()}
-        self.prefix = sorted(((k.casefold(), v) for k, v in holder.get("prefix", {}).items()),
-                             key=lambda kv: -len(kv[0]))
-        self.not_publishers = [re.compile(p, re.IGNORECASE) for p in holder.get("not_publishers", [])]
+        catalogue = default_foundries()
+        # The catalogue (foundries.toml) first; tidy_rules.toml and --rules entries win over it.
+        exact = {**catalogue.tidy_exact(), **{k.casefold(): v for k, v in holder.get("exact", {}).items()}}
+        prefix = {**catalogue.tidy_prefix(), **{k.casefold(): v for k, v in holder.get("prefix", {}).items()}}
+        self.exact = {k.casefold(): v for k, v in exact.items()}
+        self.prefix = sorted(((k.casefold(), v) for k, v in prefix.items()), key=lambda kv: -len(kv[0]))
+        self.not_publishers = [re.compile(p, re.IGNORECASE)
+                               for p in [*holder.get("not_publishers", []), *catalogue.non_publisher_patterns()]]
 
 
 def load_rules(extra: str | Path | None = None) -> Rules:
@@ -171,10 +176,10 @@ def resolve_holder(parsed, rules: Rules) -> tuple[str | None, str | None, int]:
     holder = clean_holder(clean_designer(parsed.designer), rules)
     if holder:
         return holder, "designer", claims
-    if parsed.foundry_source == "manufacturer":
+    if parsed.foundry_source in ("manufacturer", "stamp"):
         holder = clean_holder(parsed.foundry, rules)
         if holder:
-            return holder, "manufacturer", claims
+            return holder, parsed.foundry_source, claims
     return None, None, claims
 
 
@@ -239,6 +244,7 @@ def plan_tidy(
     rules: Rules | None = None,
     case: str = "as-is",
     conn: sqlite3.Connection | None = None,
+    fold_reissues: bool = False,
 ) -> list[PlannedMove]:
     source = Path(source)
     dest = Path(dest) if dest is not None else source
@@ -270,6 +276,13 @@ def plan_tidy(
             holder, source_kind = clean_holder(relative.parts[0], rules), "folder"
         if source_kind in ("designer", "manufacturer", "folder"):
             flags.append(f"holder taken from {source_kind}")
+        elif source_kind == "stamp":
+            flags.append("holder taken from the foundry's stamp in the unique ID")
+        if fold_reissues and holder:
+            packager = default_foundries().folded_into(holder, parsed.unique_id)
+            if packager is not None:
+                flags.append(f"folded into {packager.tidy_name} (reissue of {holder})")
+                holder = packager.tidy_name
         if holder is None:
             flags.append("holder unknown")
         if claims >= 2:

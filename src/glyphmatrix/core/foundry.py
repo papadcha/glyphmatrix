@@ -6,8 +6,10 @@ reliable:
 1. nameID 8 (Manufacturer) — what the font says about itself.
 2. OS/2.achVendID mapped to a name — the vendor ID registered with Microsoft.
    Only well-known IDs are mapped; unknown IDs are not guessed from.
-3. The holder named in the copyright string (nameID 0) — last resort, since
-   copyright can name a commissioner or a later owner rather than the maker.
+3. The holder named in the copyright string (nameID 0) — since copyright can
+   name a commissioner or a later owner rather than the maker.
+4. A stamp the foundry writes into the unique ID / version string (nameID 3 / 5,
+   "Brendel            :Aldine") — only when nothing above named anyone.
 
 Returns the foundry name and which signal it came from, so callers can show
 how trustworthy the value is.
@@ -16,34 +18,18 @@ from __future__ import annotations
 
 import re
 
-# Vendor IDs are case-sensitive 4-byte tags ("MONO" != "Mono").
-VENDOR_IDS: dict[str, str] = {
-    "1ASC": "Ascender",
-    "ADBE": "Adobe",
-    "APPL": "Apple",
-    "B&H ": "Bigelow & Holmes",
-    "BITS": "Bitstream",
-    "DAMA": "Dalton Maag",
-    "DYNA": "DynaComware",
-    "FTH ": "Font House",
-    "GOOG": "Google",
-    "Glyf": "Glyph Systems",
-    "H&FJ": "Hoefler & Co.",
-    "ITC ": "ITC",
-    "LINO": "Linotype",
-    "MONO": "Monotype",
-    "MS  ": "Microsoft",
-    "MSFT": "Microsoft",
-    "TPTC": "Test Pilot Collective",
-    "URW ": "URW",
-    "ULA ": "Underware",
-}
+from glyphmatrix.core.foundries import default_foundries
+
+# Vendor IDs are case-sensitive 4-byte tags ("MONO" != "Mono"). The table now lives
+# in foundries.toml; this copy is the packaged one, kept for callers that import it.
+VENDOR_IDS: dict[str, str] = default_foundries().vendor_ids(tools=False)
 
 # Tool defaults and placeholders that say nothing about who made the font.
 _PLACEHOLDER_VENDOR_IDS = {"", "????", "NONE", "UKWN", "PfEd", "XXXX", "\x00\x00\x00\x00"}
 # Vendor IDs that font editors write by default — they name the tool, not the
 # foundry: FontCreator (High-Logic), Fontographer (Macromedia/Altsys), FontLab (Pyrus).
-_TOOL_VENDOR_IDS = {"HL  ", "MACR", "Alts", "ALTS", "pyrs", "PYRS"}
+# The catalogue (foundries.toml) lists them with kind = "tool"; this copy is the packaged one.
+_TOOL_VENDOR_IDS = set(default_foundries().vendor_ids(tools=True))
 # Strings font editors leave in Manufacturer/Designer/Copyright when the
 # author never filled them in.
 _TOOL_DEFAULT_TEXT = re.compile(
@@ -58,7 +44,8 @@ _TOOL_NOTE = re.compile(r"\b(?:generated|converted|created)\s+(?:by|with|from)\b
 
 def is_tool_default(text: str | None) -> bool:
     """True when a name-table string is a font editor's placeholder, not real data."""
-    return bool(text and _TOOL_DEFAULT_TEXT.search(text))
+    return bool(text and (_TOOL_DEFAULT_TEXT.search(text)
+                          or default_foundries().is_non_publisher(text, kinds=("tool",))))
 
 
 def clean_designer(designer: str | None) -> str | None:
@@ -132,19 +119,25 @@ def resolve_foundry(
     manufacturer: str | None,
     vendor_id: str | None,
     copyright_text: str | None,
+    unique_id: str | None = None,
 ) -> tuple[str | None, str | None]:
     """Return (foundry, source), source being 'manufacturer', 'vendor_id',
-    'copyright' or None when nothing usable was found."""
+    'copyright', 'stamp' or None when nothing usable was found.
+    unique_id: nameID 3 and 5 joined — checked last, for a foundry's own stamp."""
+    catalogue = default_foundries()
     if (manufacturer and manufacturer.strip() and not is_tool_default(manufacturer)
             and not _SENTENCE_LIKE.search(manufacturer) and len(manufacturer.strip()) <= 60):
         return manufacturer.strip(), "manufacturer"
-    if vendor_id is not None and vendor_id not in _PLACEHOLDER_VENDOR_IDS | _TOOL_VENDOR_IDS:
-        name = VENDOR_IDS.get(vendor_id)
-        if name:
-            return name, "vendor_id"
+    if vendor_id is not None and vendor_id not in _PLACEHOLDER_VENDOR_IDS | set(catalogue.vendor_ids(tools=True)) | _TOOL_VENDOR_IDS:
+        found = catalogue.by_vendor_id(vendor_id)
+        if found is not None and found.publisher:
+            return found.name, "vendor_id"
     holder = holder_from_copyright(copyright_text)
     if holder:
         return holder, "copyright"
+    stamped = catalogue.by_stamp(unique_id)
+    if stamped is not None:
+        return stamped.name, "stamp"
     return None, None
 
 

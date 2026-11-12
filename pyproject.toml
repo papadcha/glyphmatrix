@@ -20,7 +20,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"glyphmatrix.core" = ["schema.sql", "tidy_rules.toml"]
+"glyphmatrix.core" = ["schema.sql", "tidy_rules.toml", "foundries.toml"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

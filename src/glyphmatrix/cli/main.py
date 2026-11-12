@@ -25,7 +25,8 @@ from glyphmatrix.core.catalog import export_catalog
 from glyphmatrix.core.doc_fonts import extract_font_names, match_library_families
 from glyphmatrix.core.projects import find_project_collection, list_projects, set_project, unset_project
 from glyphmatrix.core.gf_config import get_api_key, set_api_key
-from glyphmatrix.core.tidy import load_rules, plan_tidy
+from glyphmatrix.core.foundries import default_foundries, load_foundries, set_user_file
+from glyphmatrix.core.tidy import load_rules, plan_tidy, resolve_holder
 from glyphmatrix.core.google_fonts import download_family, get_family, search_catalog, get_catalog
 from glyphmatrix.core.collections import (
     FAVORITES_COLLECTION_NAME,
@@ -51,10 +52,13 @@ from glyphmatrix.core.organize import (
     CASE_MODES,
     apply_organize,
     plan_organize,
+    short_vendor,
     undo_organize,
     write_inventory,
 )
 from glyphmatrix.core.licenses import classify_license, list_license_conflicts
+from glyphmatrix.core.parser import parse_font_file
+from glyphmatrix.core.scanner import scan_directory
 from glyphmatrix.core.packages import (
     add_document,
     add_file_to_package,
@@ -90,10 +94,19 @@ DEFAULT_DB_PATH = Path.home() / ".glyphmatrix" / "library.db"
 
 @click.group()
 @click.option("--db", "db_path", type=click.Path(), default=str(DEFAULT_DB_PATH), show_default=True)
+@click.option("--foundries", "foundries_file", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="A foundries.toml merged over the packaged catalogue "
+                   "(default: foundries.toml next to the library DB, if there is one).")
 @click.pass_context
-def fontctl(ctx: click.Context, db_path: str) -> None:
+def fontctl(ctx: click.Context, db_path: str, foundries_file: str | None) -> None:
     ctx.ensure_object(dict)
     ctx.obj["db_path"] = db_path
+    beside_db = Path(db_path).parent / "foundries.toml"
+    try:
+        set_user_file(foundries_file or (beside_db if beside_db.is_file() else None))
+        default_foundries()
+    except (OSError, ValueError) as exc:        # unreadable or malformed catalogue
+        raise click.ClickException(f"foundries file: {exc}")
 
 
 def _connect(ctx: click.Context) -> sqlite3.Connection:
@@ -159,6 +172,9 @@ def _rel(path: Path, root: Path) -> str:
                    "versions in _versions/, unreadable files in _Unknown/_broken/ (see tidy_rules.toml).")
 @click.option("--rules", "rules_file", type=click.Path(exists=True, dir_okay=False), default=None,
               help="With --profile tidy: a TOML file of extra holder rules, merged over the built-in ones.")
+@click.option("--fold-reissues", "fold_reissues", is_flag=True,
+              help="A font stamped by a foundry that lists its copyright holder under `reissues` in "
+                   "foundries.toml (e.g. Brendel's Southern Software fonts) goes under that foundry.")
 @click.option("--json", "as_json", is_flag=True)
 @click.pass_context
 def organize(
@@ -172,6 +188,7 @@ def organize(
     no_grouping: bool,
     profile: str,
     rules_file: str | None,
+    fold_reissues: bool,
     as_json: bool,
 ) -> None:
     """Arrange fonts as Vendor/Family/Version/Family Style.ext
@@ -194,14 +211,15 @@ def organize(
             raise click.UsageError("--vendor, --vendor-alias and --no-family-grouping do not apply to "
                                    "--profile tidy; put the exceptions in a --rules file")
         try:
-            plan = plan_tidy(source_path, dest_path, rules=load_rules(rules_file), case=case, conn=library)
+            plan = plan_tidy(source_path, dest_path, rules=load_rules(rules_file), case=case, conn=library,
+                               fold_reissues=fold_reissues)
         except (OSError, ValueError) as exc:        # unreadable or malformed rules file
             raise click.ClickException(f"rules file: {exc}")
     else:
         if rules_file:
             raise click.UsageError("--rules only applies to --profile tidy")
         plan = plan_organize(source_path, dest_path, vendor=vendor, vendor_aliases=aliases, case=case,
-                            group_families=not no_grouping, conn=library)
+                            group_families=not no_grouping, conn=library, fold_reissues=fold_reissues)
 
     if do_apply:
         result = apply_organize(plan, source_path, dest_path, conn=library)
@@ -294,6 +312,98 @@ def inventory(directory: str, output: str, vendor: str | None) -> None:
     adding fonts. Columns match organize's _Font Catalog.csv."""
     path, count = write_inventory(directory, output, vendor=vendor)
     click.echo(f"wrote {path}  ({count} fonts)")
+
+
+@fontctl.group()
+def foundries() -> None:
+    """The catalogue of foundries, publishers, tools and licences (foundries.toml)."""
+
+
+def _foundry_dict(entry) -> dict:
+    return {k: (list(v) if isinstance(v, tuple) else v) for k, v in asdict(entry).items()}
+
+
+@foundries.command("list")
+@click.option("--kind", type=click.Choice(["foundry", "person", "project", "tool", "licence"]), default=None)
+@click.option("--json", "as_json", is_flag=True)
+def foundries_list(kind: str | None, as_json: bool) -> None:
+    """List the catalogue: name, kind, tidy holder folder and how sure the entry is."""
+    entries = [e for e in default_foundries().entries if kind is None or e.kind == kind]
+    if as_json:
+        click.echo(json.dumps([_foundry_dict(e) for e in entries], ensure_ascii=False))
+        return
+    for e in entries:
+        holder = f" (tidy: {e.holder})" if e.holder else ""
+        ids = f"  ids {','.join(t.strip() for t in e.vendor_ids)}" if e.vendor_ids else ""
+        click.echo(f"{e.name}{holder}  [{e.kind}{', ' + e.status if e.status else ''}]{ids}")
+    click.echo(f"\n{len(entries)} entries")
+
+
+@foundries.command("show")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True)
+def foundries_show(name: str, as_json: bool) -> None:
+    """Everything the catalogue says about NAME (a name or an alias)."""
+    entry = default_foundries().get(name)
+    if entry is None:
+        raise click.ClickException(f"{name!r} is not in the catalogue")
+    if as_json:
+        click.echo(json.dumps(_foundry_dict(entry), ensure_ascii=False))
+        return
+    for key, value in _foundry_dict(entry).items():
+        if value in ("", [], None):
+            continue
+        click.echo(f"{key}: {', '.join(value) if isinstance(value, list) else value}")
+
+
+@foundries.command("check")
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option("--unknown-only", is_flag=True, help="Only fonts whose publisher the catalogue does not know.")
+@click.option("--json", "as_json", is_flag=True)
+def foundries_check(paths: tuple[str, ...], unknown_only: bool, as_json: bool) -> None:
+    """Show, per font, which signal names the publisher and which catalogue entry matched.
+
+    Reads what organize would read (manufacturer, vendor ID, copyright, stamp) and prints the
+    folder each profile would use. Nothing is moved."""
+    catalogue = default_foundries()
+    rules = load_rules()
+    files: list[Path] = []
+    for raw in paths:
+        path = Path(raw)
+        files += sorted(scan_directory(path)) if path.is_dir() else [path]
+    rows = []
+    for path in files:
+        try:
+            parsed = parse_font_file(path)
+        except Exception as exc:  # noqa: BLE001 — report, go on
+            rows.append({"file": str(path), "error": str(exc)})
+            continue
+        vendor = short_vendor(parsed.foundry)
+        holder, holder_source, _ = resolve_holder(parsed, rules)
+        entry = catalogue.get(parsed.foundry) or catalogue.get(vendor)
+        packager = catalogue.folded_into(parsed.foundry, parsed.unique_id)
+        if unknown_only and entry is not None:
+            continue
+        rows.append({
+            "file": str(path), "organize": vendor, "organize_source": parsed.foundry_source,
+            "tidy": holder or "_Unknown", "tidy_source": holder_source,
+            "catalogue": entry.name if entry else None,
+            "fold_reissues_into": packager.name if packager else None,
+            "unique_id": parsed.unique_id,
+        })
+    if as_json:
+        click.echo(json.dumps(rows, ensure_ascii=False))
+        return
+    for row in rows:
+        if "error" in row:
+            click.echo(f"{row['file']}\n   could not read: {row['error']}")
+            continue
+        known = f"catalogue: {row['catalogue']}" if row["catalogue"] else "not in the catalogue"
+        click.echo(f"{row['file']}\n   organize: {row['organize']} ({row['organize_source'] or 'none'})   "
+                   f"tidy: {row['tidy']} ({row['tidy_source'] or 'none'})   {known}")
+        if row["fold_reissues_into"]:
+            click.echo(f"   --fold-reissues: {row['fold_reissues_into']}")
+    click.echo(f"\n{len(rows)} fonts")
 
 
 @fontctl.command(name="organize-undo")
