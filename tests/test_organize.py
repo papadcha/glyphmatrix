@@ -1040,3 +1040,74 @@ def test_catalog_failure_is_a_warning_and_leaves_no_temp_file(tmp_path, monkeypa
     assert not list(root.glob("*.tmp"))
     paths = {r[0] for r in conn.execute("SELECT path FROM font_files")}
     assert len(paths) == 3 and all(Path(p).exists() for p in paths)
+
+
+def test_plan_with_a_shared_destination_is_rejected_and_nothing_moves(tmp_path):
+    root = _messy_folder(tmp_path / "fonts")
+    plan = plan_organize(root)
+    moves = [i for i in plan if i.action == "move"]
+    moves[1].destination = Path(str(moves[0].destination).upper())   # same file on a case-insensitive disk
+    before = sorted(p.name for p in root.iterdir())
+
+    result = apply_organize(plan, root)
+
+    assert result.failure and "rejected" in result.failure
+    assert any("duplicate destination" in w for w in result.warnings)
+    assert result.moved == 0
+    assert sorted(p.name for p in root.iterdir()) == before
+
+
+def test_plan_over_an_existing_file_is_rejected(tmp_path):
+    root = _messy_folder(tmp_path / "fonts")
+    plan = plan_organize(root)
+    target = next(i for i in plan if i.action == "move").destination
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"someone else's file")
+
+    result = apply_organize(plan, root)
+
+    assert result.failure and result.moved == 0
+    assert any("destination already exists" in w for w in result.warnings)
+    assert target.read_bytes() == b"someone else's file"
+
+
+def test_manifest_lists_every_move_with_its_hash(tmp_path):
+    root = _messy_folder(tmp_path / "fonts")
+    plan = plan_organize(root)
+
+    result = apply_organize(plan, root)
+
+    manifest = next(root.glob("_manifest-*.jsonl"))
+    rows = [json.loads(line) for line in manifest.read_text().splitlines()]
+    assert len(rows) == result.moved == 3
+    assert {r["sha256"] for r in rows} == {i.content_hash for i in plan if i.action == "move"}
+
+
+def test_same_file_name_with_different_content_is_not_a_duplicate(tmp_path):
+    # RULES A10: a name proves nothing; only the content does.
+    root = tmp_path / "fonts"
+    (root / "a").mkdir(parents=True)
+    (root / "b").mkdir()
+    build_test_font(root / "a/SpectNext Regular.otf", family="SpectNext", style="Regular", manufacturer="X")
+    build_test_font(root / "b/SpectNext Regular.otf", family="SpectNext Colour", style="Regular", manufacturer="X")
+
+    plan = plan_organize(root)
+
+    assert [i.action for i in plan] == ["move", "move"]
+    assert len({i.content_hash for i in plan}) == 2
+
+
+def test_uppercase_extension_is_scanned_and_no_font_lands_outside_a_vendor_folder(tmp_path):
+    # RULES A8 + A9: absolute source path, upper-case extension.
+    root = (tmp_path / "fonts").resolve()
+    root.mkdir()
+    build_test_font(root / "LOUD.TTF", family="Loud", style="Regular", manufacturer="Acme")
+    build_test_font(root / "nomanufacturer.ttf", family="Quiet", style="Regular")
+
+    plan = plan_organize(root)
+
+    assert len(plan) == 2
+    for item in plan:
+        assert item.vendor
+        assert item.destination.relative_to(root).parts[0] == item.vendor
+        assert len(item.destination.relative_to(root).parts) >= 4

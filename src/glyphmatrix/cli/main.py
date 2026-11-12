@@ -25,6 +25,7 @@ from glyphmatrix.core.catalog import export_catalog
 from glyphmatrix.core.doc_fonts import extract_font_names, match_library_families
 from glyphmatrix.core.projects import find_project_collection, list_projects, set_project, unset_project
 from glyphmatrix.core.gf_config import get_api_key, set_api_key
+from glyphmatrix.core.tidy import load_rules, plan_tidy
 from glyphmatrix.core.google_fonts import download_family, get_family, search_catalog, get_catalog
 from glyphmatrix.core.collections import (
     FAVORITES_COLLECTION_NAME,
@@ -153,6 +154,11 @@ def _rel(path: Path, root: Path) -> str:
 @click.option("--no-family-grouping", "no_grouping", is_flag=True,
               help="Don't merge fonts in one folder whose names extend each other "
                    "('Flea Market' + 'Flea Market Block') into one family.")
+@click.option("--profile", type=click.Choice(["default", "tidy"]), default="default", show_default=True,
+              help="tidy: Holder/Family/[format/] with the holder taken from the copyright, older "
+                   "versions in _versions/, unreadable files in _Unknown/_broken/ (see tidy_rules.toml).")
+@click.option("--rules", "rules_file", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="With --profile tidy: a TOML file of extra holder rules, merged over the built-in ones.")
 @click.option("--json", "as_json", is_flag=True)
 @click.pass_context
 def organize(
@@ -164,9 +170,12 @@ def organize(
     vendor_aliases: tuple[str, ...],
     case: str,
     no_grouping: bool,
+    profile: str,
+    rules_file: str | None,
     as_json: bool,
 ) -> None:
-    """Arrange fonts as Vendor/Family/Version/Family Style.ext.
+    """Arrange fonts as Vendor/Family/Version/Family Style.ext
+    (or Holder/Family/[format/] with --profile tidy).
 
     Dry run by default. With --apply each file is copied, verified and only
     then removed from its old place; an undo log and _Font Catalog.csv are
@@ -180,8 +189,19 @@ def organize(
     source_path = Path(source)
     dest_path = Path(dest) if dest else source_path
     library = _existing_db(ctx)
-    plan = plan_organize(source_path, dest_path, vendor=vendor, vendor_aliases=aliases, case=case,
-                        group_families=not no_grouping, conn=library)
+    if profile == "tidy":
+        if vendor or aliases or no_grouping:
+            raise click.UsageError("--vendor, --vendor-alias and --no-family-grouping do not apply to "
+                                   "--profile tidy; put the exceptions in a --rules file")
+        try:
+            plan = plan_tidy(source_path, dest_path, rules=load_rules(rules_file), case=case, conn=library)
+        except (OSError, ValueError) as exc:        # unreadable or malformed rules file
+            raise click.ClickException(f"rules file: {exc}")
+    else:
+        if rules_file:
+            raise click.UsageError("--rules only applies to --profile tidy")
+        plan = plan_organize(source_path, dest_path, vendor=vendor, vendor_aliases=aliases, case=case,
+                            group_families=not no_grouping, conn=library)
 
     if do_apply:
         result = apply_organize(plan, source_path, dest_path, conn=library)
@@ -224,17 +244,19 @@ def organize(
             click.echo(f"     ! {flag}")
 
     counts = {a: sum(1 for i in plan if i.action == a)
-              for a in ("move", "unchanged", "duplicate", "active", "error")}
-    review = sum(1 for i in plan if i.flags and i.action == "move")
+              for a in ("move", "extract", "unchanged", "duplicate", "active", "error")}
+    review = sum(1 for i in plan if i.flags and i.action in ("move", "extract"))
+    extract_note = f"{counts['extract']} to extract from collections, " if counts["extract"] else ""
     click.echo(
-        f"\n{counts['move']} to move, {counts['active']} active (skipped, deactivate first), "
+        f"\n{counts['move']} to move, {extract_note}{counts['active']} active (skipped, deactivate first), "
         f"{counts['unchanged']} already in place, "
         f"{counts['duplicate']} duplicates, {counts['error']} unreadable, {review} to review"
     )
     if not do_apply:
         click.echo("dry run: nothing moved. Re-run with --apply to move files.")
         return
-    click.echo(f"moved {result.moved}, errors {result.errors}")
+    extracted_note = f"extracted {result.extracted}, " if result.extracted else ""
+    click.echo(f"moved {result.moved}, {extracted_note}errors {result.errors}")
     if result.undo_log:
         click.echo(f"undo log: {result.undo_log}")
     if result.catalog:

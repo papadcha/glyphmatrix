@@ -1,0 +1,74 @@
+# Rules for `fontctl organize --profile tidy` (see RULES.md in the tidy report).
+# Everything here is data: add a line, not code. A user file passed with
+# --rules is merged on top of this one (its entries win).
+#
+# Matching is case-insensitive. A value of "" means "not a publisher" (_Unknown).
+
+# Whole holder name -> canonical name.  (RULES E2)
+[holder.exact]
+"(urw)++" = "URW"
+"digitized data" = "Google Inc"
+"google corporation" = "Google Inc"
+"softmaker software gmbh" = "SoftMaker"
+"typodermic do not distribute" = "Typodermic"
+"hanyang i&c co" = "HanYang I&C Co., Ltd"
+"hanyang i&c co.,ltd" = "HanYang I&C Co., Ltd"
+"hanyang i&c co., ltd" = "HanYang I&C Co., Ltd"
+"sharif farsiweb, inc" = "Sharif FarsiWeb"
+"shakirulqadree" = "Syed Shakir ul Qadree"
+"attari qadri" = "Ishtiaq Ali Attari Qadri"
+"mãns greb‰ck" = "Mans Greback"
+"mâns greb‰ck" = "Mans Greback"
+"mans greb‰ck" = "Mans Greback"
+"pelayo rodrìguez" = "Pelayo Rodriguez"
+"made with scanahand" = ""
+
+# Name that STARTS WITH the key -> canonical name. Longest key wins.
+[holder.prefix]
+"freeware! from a. carr" = "A. Carr"
+"t‐26" = "T-26"
+"t-26" = "T-26"
+"199 southern software" = "Southern Software, Inc"
+"southern software" = "Southern Software, Inc"
+"bigelow & holmes" = "Bigelow & Holmes Inc"
+"attari qadri" = "Ishtiaq Ali Attari Qadri"
+"shakirulqadree" = "Syed Shakir ul Qadree"
+"cleev@o2.pl" = "Sebastian Kostrubala"
+"aces consultants" = "ACES Consultants"
+"alqalam" = "AlQalam"
+"pat snyder" = "Pat Snyder"
+"syed shakir ul qadree" = "Syed Shakir ul Qadree"
+"from the wsi-font" = "WSI-Fonts"
+"cleev" = "Sebastian Kostrubala"
+"sora sagano" = "Sora Sagano"
+"typodermic" = "Typodermic"
+"meir sadan" = "Meir Sadan"
+"ray larabie" = "Ray Larabie"
+"! from a. carr" = "A. Carr"
+"from alan carr" = "A. Carr"
+"amjad hussain alvi" = "Amjad Hussain Alvi"
+"hanyang i&c co" = "HanYang I&C Co., Ltd"
+"the comfortaa project authors" = "The Comfortaa Project Authors"
+"the vollkorn project authors" = "The Vollkorn Project Authors"
+"softmaker" = "SoftMaker"
+"monotype imaging" = "Monotype"
+# Twin copyright: a sub-folder with the shared name (RULES B2 #2). "/" nests.
+"brendel informatik & softmaker" = "SoftMaker/Brendel Informatik & SoftMaker"
+"brendel informatik cologne" = "SoftMaker/Brendel Informatik & SoftMaker"
+
+# Not a publisher: the name is a tool, licence, description or leftover. (RULES B2 #3-5, E3)
+# Regular expressions, searched from the start of the cleaned name.
+[holder]
+not_publishers = [
+  # tools
+  "(?:converted by |made with |created (?:with|by) )?(?:fontographer|metamorphosis|alltype|scanahand|fontforge)",
+  # licences and notices
+  "freeware", "shareware", "licensed under", "copy ?left", "sil$", "notice not found",
+  "for viewing only", "prawa nie",
+  # descriptions
+  ".*\\b(?:is based on|designed and encoded by|based partiall?y on)\\b", "the splines of this font",
+  "linedrawing characters", "from the tim burton film", "typeface - ",
+  # leftovers
+  "generated$", "v?\\d+(?:\\.\\d+)*$", "version \\d", "http", "e-?mail", "fassung", "red no\\.", "kirie ",
+  "ultrablack ", "dads recipe", "\\d+(?:,\\d+)+$", "\\d+\\.\\d+.*latest version", "nowak\\.tv", "phi-jamacon",
+]

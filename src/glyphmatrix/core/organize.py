@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -28,12 +29,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from glyphmatrix.core.extract import extract_member
 from glyphmatrix.core.foundry import copyright_years
 from glyphmatrix.core.parser import ParsedFont, parse_font_file
 from glyphmatrix.core.scanner import scan_directory
 
 CATALOG_NAME = "_Font Catalog.csv"
 UNDO_LOG_PREFIX = "_organize-"
+MANIFEST_PREFIX = "_manifest-"
 UNKNOWN_VENDOR = "Unknown"
 NO_VERSION = "No Version"
 
@@ -68,7 +71,7 @@ _SIZE_SUFFIX = re.compile(r"^(.*\S)\s+(\d{1,3}(?:\s+[A-Za-z]{1,3})?)$")
 class PlannedMove:
     source: Path
     destination: Path | None  # None: left in place (duplicate or unreadable)
-    action: str  # 'move', 'unchanged', 'duplicate', 'active', 'error'
+    action: str  # 'move', 'extract', 'unchanged', 'duplicate', 'active', 'error'
     vendor: str = ""
     family: str = ""
     style: str = ""
@@ -76,11 +79,17 @@ class PlannedMove:
     content_hash: str = ""
     flags: list[str] = field(default_factory=list)
     parsed: ParsedFont | None = None
+    # 'extract' items: the font number inside the collection `source`, and the
+    # extension of the standalone font that is written (.ttf/.otf).
+    member: int | None = None
+    extension: str = ""
+    revision: float | None = None  # head.fontRevision, to order versions of one style
 
 
 @dataclass
 class OrganizeResult:
     moved: int = 0
+    extracted: int = 0
     unchanged: int = 0
     duplicates: int = 0
     skipped_active: int = 0  # left in place: activated in the library
@@ -663,6 +672,63 @@ def write_catalog(plan: list[PlannedMove], dest: Path) -> Path:
     return catalog
 
 
+def check_plan(plan: list[PlannedMove]) -> list[str]:
+    """Problems that must stop a run before anything moves: a missing source, a
+    destination that is empty, already on disk (and not the file itself) or
+    shared by two entries (compared case-insensitively, as macOS/Windows do)."""
+    problems: list[str] = []
+    seen: dict[str, Path] = {}
+    vacated = {i.source.resolve() for i in plan if i.action == "move"}   # free once that move has happened
+    for item in plan:
+        if item.action not in ("move", "extract"):
+            continue
+        if item.action == "extract" and item.member is None:
+            problems.append(f"extract without a member number: {item.source}")
+        if not item.source.exists():
+            problems.append(f"source missing: {item.source}")
+        if item.destination is None:
+            problems.append(f"no destination: {item.source}")
+            continue
+        key = str(item.destination).casefold()
+        if key in seen:
+            problems.append(f"duplicate destination {item.destination}: {seen[key]} and {item.source}")
+        seen[key] = item.source
+        if (item.destination.exists() and item.destination.resolve() != item.source.resolve()
+                and item.destination.resolve() not in vacated):
+            problems.append(f"destination already exists: {item.destination}")
+    return problems
+
+
+def _extract_logged(item: PlannedMove, log, fh) -> str | None:
+    """Write one member of a collection as a standalone font, check it against
+    the hash planned for it and log it durably. Never overwrites. Returns a
+    problem description, or None; on a problem nothing is left on disk."""
+    dst = item.destination
+    written = False
+    try:
+        data = extract_member(item.source, item.member)
+        if hashlib.sha256(data).hexdigest() != item.content_hash:
+            return f"member {item.member} of {item.source.name} differs from the planned font; not written"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        with dst.open("xb") as out:            # "x": fails if anything is already there
+            written = True
+            out.write(data)
+            out.flush()
+            os.fsync(out.fileno())
+        if _sha256(dst) != item.content_hash:
+            raise OSError("written font did not verify")
+        log.writerow([str(item.source), str(dst), item.content_hash, "extract"])
+        fh.flush()
+        os.fsync(fh.fileno())
+    except FileExistsError:
+        return f"{dst} already exists; not overwritten"
+    except Exception as exc:  # noqa: BLE001 — fontTools raises many kinds on damaged collections
+        if written:
+            _remove_quietly(dst)
+        return f"could not extract member {item.member} of {item.source.name}: {exc}"
+    return None
+
+
 def apply_organize(
     plan: list[PlannedMove],
     source: str | Path,
@@ -671,15 +737,61 @@ def apply_organize(
 ) -> OrganizeResult:
     source = Path(source)
     dest = Path(dest) if dest is not None else source
-    dest.mkdir(parents=True, exist_ok=True)
     result = OrganizeResult()
+    problems = check_plan(plan)
+    if problems:
+        result.failure = f"plan rejected, nothing moved: {len(problems)} problem(s)"
+        result.warnings += problems
+        return result
+    dest.mkdir(parents=True, exist_ok=True)
     done: list[tuple[Path, Path]] = []
+    extracted: list[Path] = []
 
-    log_path = dest / f"{UNDO_LOG_PREFIX}{datetime.now():%Y%m%d-%H%M%S}.csv"
+    stamp = f"{datetime.now():%Y%m%d-%H%M%S}"
+    log_path = dest / f"{UNDO_LOG_PREFIX}{stamp}.csv"
+    # The full src -> dst -> sha map is on disk before the first file moves, so a
+    # crash mid-run leaves a record of every file, not only of those already done.
+    manifest = dest / f"{MANIFEST_PREFIX}{stamp}.jsonl"
+    try:
+        with manifest.open("w", encoding="ascii") as mf:
+            for item in plan:
+                if item.action in ("move", "extract"):
+                    mf.write(json.dumps({"original_path": str(item.source), "new_path": str(item.destination),
+                                         "sha256": item.content_hash, "kind": item.action}) + "\n")
+            mf.flush()
+            os.fsync(mf.fileno())
+    except (OSError, UnicodeError) as exc:
+        _remove_quietly(manifest)
+        result.failure = f"could not write the manifest, nothing moved: {exc}"
+        return result
     with log_path.open("w", encoding="utf-8", errors="surrogateescape", newline="") as fh:
         log = csv.writer(fh)
-        log.writerow(["original_path", "new_path", "sha256"])
-        for item in plan:
+        log.writerow(["original_path", "new_path", "sha256", "kind"])
+        # Members are written before their collection is moved away; a collection
+        # whose members could not all be written stays where it is.
+        failed_collections: set[Path] = set()
+        # Order: moves that free a destination another item will take (an older version
+        # stepping aside), then extractions, then everything else.
+        wanted = {str(i.destination).casefold() for i in plan if i.destination is not None}
+        stepping_aside = [i for i in plan if i.action == "move" and str(i.source).casefold() in wanted]
+        aside_ids = {id(i) for i in stepping_aside}
+        rest = [i for i in plan if id(i) not in aside_ids]
+        for item in stepping_aside + [i for i in rest if i.action == "extract"] + [i for i in rest if i.action != "extract"]:
+            if item.action == "move" and item.source in failed_collections:
+                item.flags.append("not moved: some of its fonts could not be extracted")
+                result.errors += 1
+                continue
+            if item.action == "extract":
+                problem = _extract_logged(item, log, fh)
+                if problem:
+                    item.flags.append(problem)
+                    item.action = "error"
+                    result.errors += 1
+                    failed_collections.add(item.source)
+                else:
+                    result.extracted += 1
+                    extracted.append(item.destination)
+                continue
             if item.action == "duplicate":
                 result.duplicates += 1
             elif item.action == "error":
@@ -699,7 +811,7 @@ def apply_organize(
                     result.errors += 1
                     continue
                 try:
-                    log.writerow([str(item.source), str(item.destination), item.content_hash])
+                    log.writerow([str(item.source), str(item.destination), item.content_hash, "move"])
                     fh.flush()
                     os.fsync(fh.fileno())
                 except (OSError, UnicodeError) as exc:
@@ -720,6 +832,10 @@ def apply_organize(
                 done.append((item.source, item.destination))
                 result.moved += 1
 
+    missing = [str(new) for new in [n for _, n in done] + extracted if not new.exists()]
+    if missing:
+        result.warnings.append(f"completeness check: {len(missing)} moved file(s) not found at destination: "
+                               + "; ".join(missing[:5]))
     prune_failures = 0
     for old, _ in done:
         try:
@@ -728,20 +844,23 @@ def apply_organize(
             prune_failures += 1  # tidying up is best effort; the moves themselves succeeded
     if prune_failures:
         result.warnings.append(f"could not remove empty folder(s) after {prune_failures} move(s)")
-    result.undo_log = log_path if done else None
-    if not done:
+    result.undo_log = log_path if (done or extracted) else None
+    if not done and not extracted:
         log_path.unlink()
+        _remove_quietly(manifest)
     if conn is not None and done:
         try:
             result.warnings += _update_db_paths(conn, done)
         except sqlite3.Error as exc:
             # DB is rolled back; put the files back so disk and library agree.
             restored, problems = undo_organize(log_path)
-            result.moved = len(done) - restored
+            result.moved = max(0, len(done) + len(extracted) - restored)
+            result.extracted = 0
             result.failure = f"library DB update failed ({exc}); moves rolled back, {restored} file(s) restored"
             result.warnings += problems
             if not problems:
                 log_path.unlink()
+                _remove_quietly(manifest)
                 result.undo_log = None
             return result
     try:
@@ -758,11 +877,27 @@ def undo_organize(log_path: str | Path, conn: sqlite3.Connection | None = None) 
     restored = 0
     problems: list[str] = []
     back: list[tuple[Path, Path]] = []
+    gone: list[Path] = []
     # surrogateescape: file names from legacy-encoded archives/NAS are not valid UTF-8
     with log_path.open(encoding="utf-8", errors="surrogateescape", newline="") as fh:
         rows = list(csv.DictReader(fh))
     for row in reversed(rows):
         original, moved = Path(row["original_path"]), Path(row["new_path"])
+        if row.get("kind") == "extract":
+            # a font written out of a collection: undo = remove it (the collection was never altered)
+            if not moved.exists():
+                continue
+            if _sha256(moved) != row["sha256"]:
+                problems.append(f"changed since organize, left alone: {moved}")
+                continue
+            try:
+                moved.unlink()
+            except OSError as exc:
+                problems.append(f"could not remove {moved}: {exc}")
+                continue
+            gone.append(moved)
+            restored += 1
+            continue
         if not moved.exists():
             if original.exists() and _sha256(original) == row["sha256"]:
                 continue  # the move never completed (log row is written before the delete): nothing to restore
@@ -783,6 +918,8 @@ def undo_organize(log_path: str | Path, conn: sqlite3.Connection | None = None) 
         restored += 1
     for moved, _ in back:
         _prune_empty_dirs(moved.parent, log_path.parent)
+    for removed in gone:
+        _prune_empty_dirs(removed.parent, log_path.parent)
     if conn is not None and back:
         try:
             problems += _update_db_paths(conn, back)
