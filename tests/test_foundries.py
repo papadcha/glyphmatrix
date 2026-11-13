@@ -241,3 +241,18 @@ def test_cli_refuses_a_malformed_foundries_file(tmp_path):
     bad = _write(tmp_path / "bad.toml", '[[foundry]]\nkind = "foundry"\n')
     result = CliRunner().invoke(fontctl, ["--db", str(tmp_path / "lib.db"), "--foundries", str(bad), "foundries", "list"])
     assert result.exit_code != 0 and "no name" in result.output
+
+
+def test_spelling_variants_fold_to_one_publisher():
+    cat = load_foundries()
+    for variant, name in [("Raymond Larabie", "Ray Larabie"), ("M. Klein", "Manfred Klein"),
+                          ("WoodStone", "WoodStone Interactive"), ("WoodStone Interactive LTD", "WoodStone Interactive"),
+                          ("Typodermic Fonts", "Typodermic"), ("SoftMaker Software GmbH", "SoftMaker")]:
+        assert cat.canonical(variant) == name, variant
+
+
+def test_klein_reissue_still_folds_under_brendel():
+    cat = load_foundries()
+    stamp = "Brendel            :Aldine"
+    assert cat.folded_into("M. Klein", stamp).name == "Brendel Informatik"
+    assert cat.folded_into("Manfred Klein", stamp).name == "Brendel Informatik"
