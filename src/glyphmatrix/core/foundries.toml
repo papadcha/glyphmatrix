@@ -225,6 +225,49 @@ sources = ["https://luc.devroye.org/fonts-44290.html"]
 notes = "Founded 1994 by Charles Biddle; also Bay Soft / BayFonts. Devroye: mostly renamed or doctored Bitstream fonts. Vendor ID is usually Alts (Fontographer) or empty, so it is not catalogued."
 
 [[foundry]]
+name = "Dieter Steffmann"
+kind = "person"
+vendor_ids = ["DST ", "DST\u0000"]
+aliases = ["typographer mediengestaltung", "typographer mediengestaltung, kreuztal"]
+prefixes = ["typographer mediengestaltung", "dieter steffmann"]
+stamps = ["TypographerMediengestaltung"]
+status = "user-decision"
+decided = "2026-11-13"
+notes = """Copyright 'Typographer Mediengestaltung' (steffmann.de) is Dieter Steffmann's studio; the folder is named after him.
+Vendor ID DST (also written 'DST' + NUL). SWAP is not catalogued: those fonts name no designer."""
+
+[[foundry]]
+name = "IBM"
+holder = "IBM Corp"
+vendor_ids = ["IBM "]
+aliases = ["ibm corp", "ibm corporation", "international business machines"]
+notes = "IBM Plex, designed by Bold Monday; the Korean cut is by Sandoll under the same copyright."
+
+[[foundry]]
+name = "Indian Type Foundry"
+vendor_ids = ["ITFO"]
+aliases = ["indian type foundry"]
+status = "confirmed"
+notes = "Deliberately not 'ITF': that abbreviation is the International Typeface Foundry (see Rabbit Reproductions)."
+
+[[foundry]]
+name = "enStep Incorporated"
+aliases = ["enstep", "enstep inc", "enstep software", "enstep incorporated"]
+prefixes = ["enstep"]
+status = "inferred"
+decided = "2026-11-13"
+sources = ["https://luc.devroye.org/fonts-27440.html"]
+notes = "1997 collection (ImageFonts UltraPak), Altsys Metamorphosis conversions. 'Incorporated' = enStep Software (Beaverton, Oregon) is inferred, not confirmed."
+
+[[foundry]]
+name = "XMind"
+aliases = ["xmind ltd", "xmind"]
+prefixes = ["xmind"]
+status = "confirmed"
+sources = ["https://xmind.com/blog/nevermind-xmind-original-typeface-is-open-to-download-for-free"]
+notes = "NeverMind typeface, SIL OFL. Vendor ID UKWN is a generic placeholder, so it is not catalogued."
+
+[[foundry]]
 name = "Agfa Monotype"
 aliases = ["agfa monotype", "agfa monotype corporation"]
 status = "confirmed"
@@ -260,6 +303,12 @@ patterns = ["high-logic", "erwin denissen"]
 name = "Font converters"
 kind = "tool"
 patterns = ["\\bmetamorphosis\\b", "\\balltype\\b", "\\bscanahand\\b", "\\bfontforge\\b", "\\bmftrace\\b"]
+
+[[foundry]]
+name = "Copyright placeholder"
+kind = "licence"
+patterns = ["^this is a copyrighted typeface program"]
+notes = "A Fontographer-era sentence cut as a holder: not a publisher."
 
 [[foundry]]
 name = "SIL Open Font Licence"

@@ -266,3 +266,16 @@ def test_summitsoft_and_bay_animation():
     assert cat.by_stamp("SummitsoftCorporation: Abevel Bold: 2010").name == "Summitsoft Corporation"
     assert cat.canonical("Bay Animation, Inc") == "Bay Animation Inc"
     assert cat.by_vendor_id("Alts").kind == "tool"
+
+
+def test_steffmann_ibm_itf_enstep_xmind():
+    cat = load_foundries()
+    assert cat.canonical("Typographer Mediengestaltung") == "Dieter Steffmann"
+    assert cat.by_vendor_id("DST\x00").name == "Dieter Steffmann"
+    assert cat.by_vendor_id("SWAP") is None
+    assert cat.by_vendor_id("IBM ").tidy_name == "IBM Corp"
+    assert cat.by_vendor_id("ITFO").name == "Indian Type Foundry"
+    assert cat.canonical("ITF") is None
+    assert cat.canonical("enStep Incorporated") == "enStep Incorporated"
+    assert cat.canonical("XMind ltd") == "XMind"
+    assert cat.is_non_publisher("This is a copyrighted typeface program. Duplication prohibited.")
