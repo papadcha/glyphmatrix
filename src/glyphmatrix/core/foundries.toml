@@ -205,6 +205,26 @@ status = "confirmed"
 decided = "2026-11-13"
 
 [[foundry]]
+name = "Summitsoft Corporation"
+vendor_ids = ["SSCF"]
+aliases = ["summitsoft", "summitsoft corp", "macxware", "macware", "macware inc"]
+prefixes = ["summitsoft"]
+stamps = ["SummitsoftCorporation:"]
+status = "confirmed"
+decided = "2026-11-13"
+sources = ["https://www.bhphotovideo.com/c/product/1095248-REG/summitsoft_00338_4_fontpack_pro_master_collection.html", "https://creativepro.com/macxware-gets-creative-with-macfonts-2/"]
+notes = "Commercial CD/download collections (Creative Fonts Collection, FontPack Pro). nameID 9 'SummitType Fonts'; macXware/Macware is a division named in the copyright."
+
+[[foundry]]
+name = "Bay Animation Inc"
+aliases = ["bay animation", "bay animation, inc", "bay soft", "bayfonts"]
+prefixes = ["bay animation"]
+status = "inferred"
+decided = "2026-11-13"
+sources = ["https://luc.devroye.org/fonts-44290.html"]
+notes = "Founded 1994 by Charles Biddle; also Bay Soft / BayFonts. Devroye: mostly renamed or doctored Bitstream fonts. Vendor ID is usually Alts (Fontographer) or empty, so it is not catalogued."
+
+[[foundry]]
 name = "Agfa Monotype"
 aliases = ["agfa monotype", "agfa monotype corporation"]
 status = "confirmed"

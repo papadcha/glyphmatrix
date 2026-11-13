@@ -256,3 +256,13 @@ def test_klein_reissue_still_folds_under_brendel():
     stamp = "Brendel            :Aldine"
     assert cat.folded_into("M. Klein", stamp).name == "Brendel Informatik"
     assert cat.folded_into("Manfred Klein", stamp).name == "Brendel Informatik"
+
+
+def test_summitsoft_and_bay_animation():
+    cat = load_foundries()
+    assert cat.canonical("Summitsoft Corporation") == "Summitsoft Corporation"
+    assert cat.canonical("Macware Inc") == "Summitsoft Corporation"
+    assert cat.by_vendor_id("SSCF").name == "Summitsoft Corporation"
+    assert cat.by_stamp("SummitsoftCorporation: Abevel Bold: 2010").name == "Summitsoft Corporation"
+    assert cat.canonical("Bay Animation, Inc") == "Bay Animation Inc"
+    assert cat.by_vendor_id("Alts").kind == "tool"
