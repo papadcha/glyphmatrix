@@ -63,7 +63,7 @@ _COMPANY_SUFFIX = re.compile(
 # "Copyright c 1992 X" — a bare "c" after the word is the © sign typed as a letter.
 _COPYRIGHT_MARK = re.compile(r"(?:copyright(?:\s+c\b)?|copr\.?|\(c\)|©)", re.IGNORECASE)
 # nameID 8 holding a copyright/trademark sentence instead of a name.
-_SENTENCE_LIKE = re.compile(r"\(c\)|©|\(tm\)|™|trademark|all rights|\bcopyright\b|registered in", re.IGNORECASE)
+_SENTENCE_LIKE = re.compile(r"\(c\)|©|\(tm\)|™|trademark|all rights|\bcopyright\b|registered in|\bcopr\.", re.IGNORECASE)
 _INITIAL_DOT = re.compile(r"\b(?:[A-Z]|Rev|Dr|Mr|Mrs|Ms|Prof|Jr|Sr|St)\.(?=\s+[A-Z][a-z])")
 _DOMAIN = re.compile(r"^(?:https?://|www\.)(?:www\.)?([a-z0-9][a-z0-9-]*)\.[a-z]{2,}\b", re.IGNORECASE)
 _YEARS = re.compile(r"\b(?:19|20)\d{2}\b(?:\s*(?:[-–,/]|,?\s*and)\s*(?:(?:19|20)\d{2}|\d{2})\b)*")
@@ -79,6 +79,8 @@ def holder_from_copyright(copyright_text: str | None, keep_suffix: bool = False)
     text = _TOOL_NOTE.split(copyright_text, maxsplit=1)[0].strip()
     if not text or is_tool_default(text):
         return None
+    # Fontographer escapes the brackets: "Copyright \\(c\\) 1996 X" is "(c)".
+    text = text.replace("\\(", "(").replace("\\)", ")")
     match = _COPYRIGHT_MARK.search(text)
     if not match:
         return None
@@ -88,7 +90,7 @@ def holder_from_copyright(copyright_text: str | None, keep_suffix: bool = False)
         stripped = _COPYRIGHT_MARK.sub("", rest, count=1) if _COPYRIGHT_MARK.match(rest.lstrip()) else rest
         stripped = stripped.lstrip(" .:,")
         stripped = _YEARS.sub("", stripped, count=1) if _YEARS.match(stripped) else stripped
-        stripped = re.sub(r"^\s*(?:by)\s+", "", stripped, flags=re.IGNORECASE).lstrip(" .:,")
+        stripped = re.sub(r"^\s*(?:as an unpublished work\s+)?(?:by)\s+", "", stripped, flags=re.IGNORECASE).lstrip(" .:,")
         if stripped == rest:
             break
         rest = stripped
@@ -108,6 +110,10 @@ def holder_from_copyright(copyright_text: str | None, keep_suffix: bool = False)
     name = re.split(r"\s*(?:[;(\[]|\.\s|\.$|\.(?=\d)|,\s*All rights|\s+All rights|\s+(?:19|20)\d{2}\b)",
                     rest, maxsplit=1, flags=re.IGNORECASE)[0]
     name = name.replace("\0", ".").strip(" .,")
+    # "... A.G. Data (c) 1992", "... Inc., Portions (c) 1992 Microsoft", "Name <mail@host>".
+    name = re.sub(r"\s*<[^>]*>", "", name)
+    name = re.sub(r"[,\s]+(?:Data|Portions)\b.*$", "", name, flags=re.IGNORECASE)
+    name = name.rstrip(" .,©")
     if not keep_suffix:
         name = _COMPANY_SUFFIX.sub("", name).strip(" .,")
     if not name or not name[0].isalpha() or len(name) > 60:
@@ -138,6 +144,10 @@ def resolve_foundry(
     stamped = catalogue.by_stamp(unique_id)
     if stamped is not None:
         return stamped.name, "stamp"
+    # Last resort: a publisher's own pattern in a copyright that has no readable (c) mark.
+    matched = catalogue.by_pattern(copyright_text)
+    if matched is not None:
+        return matched.name, "copyright"
     return None, None
 
 

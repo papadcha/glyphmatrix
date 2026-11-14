@@ -35,7 +35,7 @@ from glyphmatrix.core.extract import (
     member_count,
     member_extension,
 )
-from glyphmatrix.core.foundries import default_foundries
+from glyphmatrix.core.foundries import _key, default_foundries
 from glyphmatrix.core.foundry import (
     _COPYRIGHT_MARK,
     clean_designer,
@@ -77,8 +77,9 @@ class Rules:
         # The catalogue (foundries.toml) first; tidy_rules.toml and --rules entries win over it.
         exact = {**catalogue.tidy_exact(), **{k.casefold(): v for k, v in holder.get("exact", {}).items()}}
         prefix = {**catalogue.tidy_prefix(), **{k.casefold(): v for k, v in holder.get("prefix", {}).items()}}
-        self.exact = {k.casefold(): v for k, v in exact.items()}
-        self.prefix = sorted(((k.casefold(), v) for k, v in prefix.items()), key=lambda kv: -len(kv[0]))
+        # Accent-insensitive, like the catalogue: "büro destruct bern" must meet the prefix "buro destruct".
+        self.exact = {_key(k): v for k, v in exact.items()}
+        self.prefix = sorted(((_key(k), v) for k, v in prefix.items()), key=lambda kv: -len(kv[0]))
         self.not_publishers = [re.compile(p, re.IGNORECASE)
                                for p in [*holder.get("not_publishers", []), *catalogue.non_publisher_patterns()]]
 
@@ -99,6 +100,7 @@ def load_rules(extra: str | Path | None = None) -> Rules:
 
 def _lookup(key: str, rules: Rules) -> str | None:
     """Canonical name for an exact or prefix match; "" means 'not a publisher'; None no match."""
+    key = _key(key)
     mapped = rules.exact.get(key)
     if mapped is None:
         mapped = next((v for k, v in rules.prefix if key.startswith(k)), None)
@@ -180,6 +182,10 @@ def resolve_holder(parsed, rules: Rules) -> tuple[str | None, str | None, int]:
         holder = clean_holder(parsed.foundry, rules)
         if holder:
             return holder, parsed.foundry_source, claims
+    # Last resort: a publisher's own pattern in a copyright with no readable (c) mark.
+    matched = default_foundries().by_pattern(parsed.copyright)
+    if matched is not None:
+        return matched.tidy_name, "copyright", claims
     return None, None, claims
 
 

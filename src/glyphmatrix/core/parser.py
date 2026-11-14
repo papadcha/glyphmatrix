@@ -428,8 +428,25 @@ def _parse_type1_glyphs(t1font: T1Font) -> tuple[list[ParsedGlyph], int]:
     return glyphs, len(glyph_set)
 
 
+_T1_OCTAL = re.compile(r"\\([0-7]{3})")
+
+
+def _t1_text(text: str | None) -> str | None:
+    """A Type 1 header string with its non-ASCII characters made readable. The header is read
+    as latin-1, so a Mac-written "b\\237ro" (PostScript octal escape) or a raw 0x9f stands for
+    the Mac Roman "ü"; characters that are valid latin-1 (the (c) sign) are left alone."""
+    if not text:
+        return text
+    text = _T1_OCTAL.sub(lambda m: chr(int(m.group(1), 8)), text)
+    if any("\x80" <= ch <= "\x9f" for ch in text):     # C1 controls only occur in Mac Roman text
+        text = text.encode("latin-1", "replace").decode("mac_roman", "replace")
+    return text
+
+
 def _parse_type1(path: Path, content_hash: str) -> ParsedFont:
-    t1 = T1Font(str(path))
+    # latin-1: the default (ascii) fails on the (c) sign and accented names found in
+    # old Type 1 headers, so those files were reported as unreadable.
+    t1 = T1Font(str(path), encoding="latin-1")
     t1.parse()
     fi = t1.font.get("FontInfo", {})
 
@@ -442,7 +459,7 @@ def _parse_type1(path: Path, content_hash: str) -> ParsedFont:
     version = fi.get("version") or fi.get("Version")
     if version:
         version = version.split(";")[0].strip()
-    license_text = fi.get("Notice")
+    license_text = _t1_text(fi.get("Notice"))
 
     glyphs, total = _parse_type1_glyphs(t1)
 
@@ -463,6 +480,8 @@ def _parse_type1(path: Path, content_hash: str) -> ParsedFont:
         glyph_count=total,
         glyphs=glyphs,
         metadata_complete=True,
+        # A Type 1 font's /Notice is its copyright line: tidy reads the holder from it.
+        copyright=license_text,
     )
 
 
@@ -878,5 +897,6 @@ def parse_font_file(path: str | Path) -> ParsedFont:
         metadata=metadata,
         foundry_source=foundry_source,
         copyright=copyright_text,
-        designer=designer,        unique_id=unique_id,
+        designer=designer,
+        unique_id=unique_id,
     )

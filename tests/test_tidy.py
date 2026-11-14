@@ -4,7 +4,7 @@ from click.testing import CliRunner
 from glyphmatrix.cli.main import fontctl
 from glyphmatrix.core.organize import apply_organize, undo_organize
 from glyphmatrix.core.parser import parse_font_file
-from glyphmatrix.core.tidy import clean_holder, holder_from_claims, load_rules, plan_tidy
+from glyphmatrix.core.tidy import clean_holder, holder_from_claims, load_rules, plan_tidy, resolve_holder
 
 from .fontbuilder import build_test_font
 
@@ -68,6 +68,17 @@ def test_clean_holder_follows_the_rules_table(raw, expected):
 ])
 def test_holder_from_claims(text, expected):
     assert holder_from_claims(text, RULES)[0] == expected
+
+
+def test_a_publisher_pattern_names_the_holder_when_the_copyright_sign_is_broken(tmp_path):
+    # Fonthead's fonts write "I1997 ..." for the (c) sign: no claim for holder_from_claims to read.
+    font = tmp_path / "pesto.ttf"
+    build_test_font(font, family="Pesto", style="Regular",
+                    copyright="I1997 Ethan Dunham - Fonthead Design - http://www.fonthead.com")
+    assert resolve_holder(parse_font_file(font), RULES)[:2] == ("Fonthead Design", "copyright")
+    other = tmp_path / "other.ttf"
+    build_test_font(other, family="Other", style="Regular", copyright="I1997 Someone Else")
+    assert resolve_holder(parse_font_file(other), RULES)[0] is None
 
 
 def _library(root):

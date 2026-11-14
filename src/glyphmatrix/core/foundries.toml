@@ -190,6 +190,41 @@ decided = "2026-11-13"
 notes = "'M. Klein' and 'Manfred Klein' are one designer; Brendel packages carry his fonts (see Brendel Informatik reissues)."
 
 [[foundry]]
+name = "Applied Graphic Arts"
+aliases = ["applied graphic arts", "mak alagha", "mak alagha, applied graphic arts"]
+prefixes = ["mak alagha", "mohammad alagha", "1995. mak alagha"]
+status = "inferred"
+decided = "2026-11-13"
+notes = "AGA fonts (AGA Battouta, Rasheeq, Kaleelah, Islamic Phrases) by Mohammad A. K. Alagha. The copyright strings read 'MAK Alagha, Applied Graphic Arts', often with a '1995.' year and a cut-off 'Designed and', or 'Mohammad Alagha. Almedia Interactive Limited. AGA'. Inferred from folder names, not checked against a source."
+
+[[foundry]]
+name = "Maniackers Design"
+aliases = ["maniackers design", "maniackers design - masayuki sato"]
+prefixes = ["maniackers design"]
+status = "inferred"
+decided = "2026-11-13"
+notes = "Masayuki Sato's studio; the copyright reads '(C) 2007/2008/2009 Maniackers Design' with or without '- Masayuki sato'. Its MKSD fonts (e.g. 176MKSD, 232MKSD) sit in Manfred Klein's library as well - a joint series."
+
+[[foundry]]
+name = "Fonthead Design"
+aliases = ["fonthead design", "fonthead design inc", "ethan dunham", "ethan dunham - fonthead design", "ethan dunham fonthead design"]
+prefixes = ["ethan dunham", "fonthead design", "wes rand & ethan dunham", "fonthead design - wes rand"]
+patterns = ["\\bfonthead design\\b", "\\bfonthead\\.com\\b"]
+status = "confirmed"
+decided = "2026-11-14"
+sources = ["https://luc.devroye.org/fonts-27416.html"]
+notes = "Ethan Dunham's foundry (founded 1995, later Fontspring). The copyright is written many ways: 'Ethan Dunham - Fonthead Design' (also with a U+2010 hyphen), 'Ethan Dunham fonthead design', 'Ethan Dunham, fonthead design', 'Fonthead Design Inc' (2001-2008 fonts), 'Wes Rand & Ethan Dunham - Fonthead Design', and often a broken copyright sign ('I1999 Ethan Dunham - ... www.fonthead.com'), which holder_from_copyright cannot read because it finds no copyright mark. Folder name is without 'Inc', as the library drops corporate suffixes. Some Fonthead fonts have empty copyright fields (BattleStation, CircusDog, Dandelion, ZipSonik ...): they were placed by Luc Devroye's list and the source folder, not by anything in the file."
+
+[[foundry]]
+name = "Büro Destruct"
+aliases = ["büro destruct", "buro destruct", "lopetz, buro destruct", "lopetz, büro destruct"]
+prefixes = ["buro destruct", "büro destruct", "lopetz, buro destruct", "lopetz, büro destruct", "peter korsman, buro destruct", "peter korsman, büro destruct"]
+patterns = ["\\bb[uü]ro destruct\\b"]
+status = "inferred"
+decided = "2026-11-14"
+notes = "Swiss studio (Bern). The holder is spelt many ways: 'buro destruct Berne capital', 'büro destruct bern', 'buro destruct berne captial' (typo), 'Lopetz, Buro Destruct', 'Peter Korsman, buro destruct berne capital'. Old Type 1 headers have no (c) sign ('Paccer is designed by Lopetz, büro destruct ...'), so the pattern is what names them. Lopetz and Peter Korsman are its designers; the long 'BD ... designed and encoded by ...' folders in the library are separate leftovers and are not mapped here."
+
+[[foundry]]
 name = "WoodStone Interactive"
 aliases = ["woodstone", "woodstone interactive", "woodstone interactive ltd"]
 prefixes = ["woodstone interactive"]

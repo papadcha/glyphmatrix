@@ -86,6 +86,15 @@ def test_stamp_names_the_publisher_only_when_nothing_else_does():
     assert resolve_foundry("Some Maker", None, None, BRENDEL_STAMP) == ("Some Maker", "manufacturer")
 
 
+def test_publisher_pattern_reads_a_copyright_with_a_broken_sign():
+    # Fonthead's fonts spell the (c) sign as "I": no mark for holder_from_copyright to find.
+    broken = "I1997 Ethan Dunham - Fonthead Design - http://www.fonthead.com"
+    assert resolve_foundry(None, None, broken) == ("Fonthead Design", "copyright")
+    # a readable copyright still wins over a pattern, and an unrelated text stays unknown
+    assert resolve_foundry(None, None, "Copyright c 1992 Southern Software, Inc.") == ("Southern Software", "copyright")
+    assert resolve_foundry(None, None, "I1997 Someone Else") == (None, None)
+
+
 def test_folded_into_needs_the_stamp_and_a_listed_holder():
     catalogue = default_foundries()
     assert catalogue.folded_into("Southern Software", BRENDEL_STAMP).name == "Brendel Informatik"

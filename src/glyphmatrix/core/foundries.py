@@ -158,6 +158,17 @@ class Foundries:
                     return entry
         return None
 
+    def by_pattern(self, *texts: str | None) -> Foundry | None:
+        """The publisher whose `patterns` match one of the texts: the last resort for a
+        copyright the holder parser cannot read (a broken (c) sign: "I1997 Ethan Dunham ...")."""
+        for text in texts:
+            if not text:
+                continue
+            for pattern, entry in self._patterns:
+                if entry.publisher and pattern.search(text):
+                    return entry
+        return None
+
     def is_non_publisher(self, text: str | None, kinds: tuple[str, ...] = NON_PUBLISHER_KINDS) -> bool:
         """True when the text is a placeholder of one of `kinds` (a tool, a licence), not a publisher."""
         if not text:
