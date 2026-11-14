@@ -136,3 +136,48 @@ def test_quiet_fonttools_restores_handlers_and_propagation():
         pass
 
     assert logger.handlers == handlers and logger.propagate == propagate
+
+
+def test_quiet_fonttools_names_the_file_in_a_passed_on_error(caplog):
+    log = logging.getLogger("fontTools.ttLib.tables._n_a_m_e")
+    with caplog.at_level(logging.ERROR):
+        with quiet_fonttools("ABRACADA.TTF"):
+            log.error("'name' table stringOffset incorrect. Expected: 342; Actual: 398")
+
+    assert [r.getMessage() for r in caplog.records] == [
+        "ABRACADA.TTF: 'name' table stringOffset incorrect. Expected: 342; Actual: 398"
+    ]
+
+
+def test_quiet_fonttools_names_the_file_once_for_a_collapsed_error(caplog):
+    log = logging.getLogger("fontTools.ttLib.tables._n_a_m_e")
+    with caplog.at_level(logging.ERROR):
+        with quiet_fonttools("broken.ttf"):
+            for i in range(50):
+                log.error("skipping malformed name record #%d", i)
+
+    assert [r.getMessage() for r in caplog.records] == [
+        "broken.ttf: skipping malformed name record #0 (and 49 more like it)"
+    ]
+
+
+def test_quiet_fonttools_without_a_label_leaves_messages_unchanged(caplog):
+    log = logging.getLogger("fontTools.ttLib.tables._n_a_m_e")
+    with caplog.at_level(logging.ERROR):
+        with quiet_fonttools():
+            log.error("something else")
+
+    assert [r.getMessage() for r in caplog.records] == ["something else"]
+
+
+def test_parse_font_file_names_the_broken_file_in_the_error(tmp_path):
+    path = _broken_name_table_font(tmp_path / "broken-name.ttf")
+
+    stderr = _stderr_of(
+        "from glyphmatrix.core.parser import parse_font_file\n"
+        "try: parse_font_file(sys.argv[1])\n"
+        "except Exception: pass",
+        path,
+    )
+
+    assert "broken-name.ttf" in stderr

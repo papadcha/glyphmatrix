@@ -124,7 +124,7 @@ def _word_art_letters(font: TTFont, cmap: dict) -> str | None:
 
 def _read_font(path: Path) -> tuple[str, str, dict, str | None, dict]:
     """(family, style, cmap, word-art letters, Symbol-charmap cmap)."""
-    with quiet_fonttools(), TTFont(path, lazy=True, fontNumber=0) as font:
+    with quiet_fonttools(Path(path).name), TTFont(path, lazy=True, fontNumber=0) as font:
         names = font["name"]
         family = (names.getBestFamilyName() or path.stem).strip()
         style = (names.getBestSubFamilyName() or "Regular").strip()

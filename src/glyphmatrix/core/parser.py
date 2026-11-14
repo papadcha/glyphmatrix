@@ -22,8 +22,9 @@ class _CollapseRepeats(logging.Handler):
     a count: a broken name table logs "skipping malformed name record #%d"
     once per record, tens of thousands of times."""
 
-    def __init__(self) -> None:
+    def __init__(self, label: str | None = None) -> None:
         super().__init__()
+        self.label = label
         self.held: dict[tuple, list] = {}
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -31,23 +32,27 @@ class _CollapseRepeats(logging.Handler):
 
     def pass_on(self) -> None:
         for record, count in self.held.values():
-            if count > 1:
-                record.msg = f"{record.getMessage()} (and {count - 1} more like it)"
+            if count > 1 or self.label:
+                message = record.getMessage()
+                if count > 1:
+                    message = f"{message} (and {count - 1} more like it)"
+                record.msg = f"{self.label}: {message}" if self.label else message
                 record.args = None
             logging.getLogger(record.name).handle(record)
 
 
 @contextmanager
-def quiet_fonttools() -> Iterator[None]:
+def quiet_fonttools(label: str | None = None) -> Iterator[None]:
     """Hide fontTools' WARNING-level log noise ("'created' timestamp out of
     range", "extra bytes in post.stringData array", ...) for the duration of
     the block, then restore the previous level. Tables are decompiled lazily,
     so the whole time the font is used must be inside the block, not just the
     TTFont() call. Errors still get through, but a repeated one is passed on
-    once, with its count, when the block ends."""
+    once, with its count, when the block ends. `label` (the file's name) is
+    put in front of each passed-on error, which fontTools words without one."""
     logger = logging.getLogger("fontTools")
     previous_level, previous_propagate = logger.level, logger.propagate
-    collapse = _CollapseRepeats()
+    collapse = _CollapseRepeats(label)
     logger.setLevel(logging.ERROR)
     logger.addHandler(collapse)
     logger.propagate = False
@@ -648,7 +653,7 @@ def _is_collection(path: Path) -> bool:
 def _collection_members(path: Path) -> list[dict]:
     """Family/style/PostScript name of every font inside a .ttc/.otc."""
     members = []
-    with quiet_fonttools():
+    with quiet_fonttools(path.name):
         collection = TTCollection(path, lazy=True)
         try:
             for index, font in enumerate(collection.fonts):
@@ -788,7 +793,7 @@ def parse_font_file(path: str | Path) -> ParsedFont:
 
     # For a collection, the first member stands for the file; the others are
     # listed in metadata (font_files.path is unique, so one row per file).
-    with quiet_fonttools(), TTFont(path, lazy=True, fontNumber=0) as font:
+    with quiet_fonttools(path.name), TTFont(path, lazy=True, fontNumber=0) as font:
         name_table = font["name"]
         family_name = name_table.getBestFamilyName() or path.stem
         vendor_id = font["OS/2"].achVendID if "OS/2" in font else None

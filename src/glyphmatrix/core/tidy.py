@@ -191,7 +191,7 @@ def _ext(item: PlannedMove) -> str:
 def _read_head(path: Path) -> tuple[float, str, str | None] | None:
     """(head.fontRevision, style, version string) of a font, read lazily; None if unreadable."""
     try:
-        with quiet_fonttools(), TTFont(path, lazy=True, fontNumber=0) as font:
+        with quiet_fonttools(Path(path).name), TTFont(path, lazy=True, fontNumber=0) as font:
             name = font["name"]
             style = (name.getBestSubFamilyName() or "Regular").strip()
             return round(float(font["head"].fontRevision), 3), style, name.getDebugName(5)
